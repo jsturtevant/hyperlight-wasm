@@ -76,6 +76,7 @@ fn main() {
             let engine = Engine::new(&config).unwrap();
             let bytes = std::fs::read(infile).unwrap();
             let serialized = if args.get_flag("component") {
+                println!("compiling as component");
                 engine.precompile_component(&bytes).unwrap()
             } else {
                 engine.precompile_module(&bytes).unwrap()

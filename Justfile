@@ -8,7 +8,7 @@ set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
 
 build-all target=default-target: (build target) (build-wasm-examples target) (build-rust-wasm-examples target) (build-wasm-runtime target)
 
-build target=default-target features="": (build-wasm-runtime target) (fmt-check)
+build target=default-target features="": (build-wasm-runtime target) 
     cargo build {{ if features =="" {''} else if features=="no-default-features" {"--no-default-features" } else {"--no-default-features -F " + features } }} --verbose --profile={{ if target == "debug" {"dev"} else { target } }}
 
 mkdir-redist target=default-target:
@@ -38,7 +38,7 @@ check target=default-target:
 
 fmt-check:
     rustup toolchain install nightly -c rustfmt && cargo +nightly fmt -v --all -- --check
-    cd src/rust_wasm_samples && rustup toolchain install nightly -c rustfmt && cargo +nightly fmt -v --all -- --check
+    cd src/rust_wasm_samples && rustup toolchain install nightly-2025-06-16 fmt -c rustfmt && cargo +nightly-2025-06-16 fmt fmt -v --all -- --check
     cd src/wasm_runtime && rustup toolchain install nightly -c rustfmt && cargo +nightly fmt -v --all -- --check
 fmt: 
     cargo +nightly fmt --all
