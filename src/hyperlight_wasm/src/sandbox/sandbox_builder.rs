@@ -17,6 +17,8 @@ limitations under the License.
 use hyperlight_host::func::HostFunction;
 use hyperlight_host::sandbox::SandboxConfiguration;
 use hyperlight_host::{GuestBinary, HyperlightError, Result, is_hypervisor_present};
+#[cfg(feature = "gdb")]
+use hyperlight_host::sandbox::config::DebugInfo;
 
 use super::proto_wasm_sandbox::ProtoWasmSandbox;
 
@@ -101,6 +103,14 @@ impl SandboxBuilder {
     #[cfg(feature = "crashdump")]
     pub fn with_crashdump_enabled(mut self, enabled: bool) -> Self {
         self.config.set_guest_core_dump(enabled);
+        self
+    }
+
+    /// Sets the configuration for the guest debug
+    #[cfg(feature = "gdb")]
+    pub fn set_guest_debug_info(mut self) -> Self  {
+        let debug_info = DebugInfo { port: 8080 };
+        self.config.set_guest_debug_info(debug_info);
         self
     }
 

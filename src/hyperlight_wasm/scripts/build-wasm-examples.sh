@@ -16,7 +16,7 @@ if [ -f "/.dockerenv" ] || grep -q docker /proc/1/cgroup; then
     do
         echo Building ${FILENAME}
         # Build the wasm file with wasi-libc for wasmtime
-        /opt/wasi-sdk/bin/clang -flto -ffunction-sections -mexec-model=reactor -O3 -z stack-size=4096 -Wl,--initial-memory=65536 -Wl,--export=__data_end -Wl,--export=__heap_base,--export=malloc,--export=free,--export=__wasm_call_ctors -Wl,--strip-all,--no-entry -Wl,--allow-undefined -Wl,--gc-sections  -o ${OUTPUT_DIR}/${FILENAME%.*}-wasi-libc.wasm ${FILENAME}
+        /opt/wasi-sdk/bin/clang -flto -ffunction-sections -mexec-model=reactor -g -O3 -z stack-size=4096 -Wl,--initial-memory=65536 -Wl,--export=__data_end -Wl,--export=__heap_base,--export=malloc,--export=free,--export=__wasm_call_ctors -Wl,--strip-all,--no-entry -Wl,--allow-undefined -Wl,--gc-sections  -o ${OUTPUT_DIR}/${FILENAME%.*}-wasi-libc.wasm ${FILENAME}
 
         cargo run -p hyperlight-wasm-aot compile ${OUTPUT_DIR}/${FILENAME%.*}-wasi-libc.wasm ${OUTPUT_DIR}/${FILENAME%.*}.aot
     done
@@ -30,7 +30,7 @@ if [ -f "/.dockerenv" ] || grep -q docker /proc/1/cgroup; then
 
         # Build the wasm file with wasi-libc for wasmtime
         /opt/wasi-sdk/bin/wasm32-wasip2-clang \
-            -ffunction-sections -mexec-model=reactor -O3 -z stack-size=4096 \
+            -ffunction-sections -mexec-model=reactor -g -O3 -z stack-size=4096 \
             -Wl,--initial-memory=65536 -Wl,--export=__data_end -Wl,--export=__heap_base,--export=malloc,--export=free,--export=__wasm_call_ctors \
             -Wl,--strip-all,--no-entry -Wl,--allow-undefined -Wl,--gc-sections \
             -o ${OUTPUT_DIR}/${COMPONENT_NAME}-p2.wasm \
@@ -54,9 +54,9 @@ else
 
     for FILENAME in $(find . -name '*.c' -not -path './components/*')
     do
-        echo Building ${FILENAME}
+        echo Building ${FILENAME} with opts
         # Build the wasm file with wasi-libc for wasmtime
-        docker run --rm -i -v "${PWD}:/tmp/host" -v "${OUTPUT_DIR}:/tmp/output/" wasm-clang-builder:latest /opt/wasi-sdk/bin/clang -flto -ffunction-sections -mexec-model=reactor -O3 -z stack-size=4096 -Wl,--initial-memory=65536 -Wl,--export=__data_end -Wl,--export=__heap_base,--export=malloc,--export=free,--export=__wasm_call_ctors -Wl,--strip-all,--no-entry -Wl,--allow-undefined -Wl,--gc-sections  -o /tmp/output/${FILENAME%.*}-wasi-libc.wasm /tmp/host/${FILENAME}
+        docker run --rm -i -v "${PWD}:/tmp/host" -v "${OUTPUT_DIR}:/tmp/output/" wasm-clang-builder:latest /opt/wasi-sdk/bin/clang -flto -ffunction-sections -mexec-model=reactor -O1 -g  -z stack-size=4096 -Wl,--initial-memory=65536 -Wl,--export=__data_end -Wl,--export=__heap_base,--export=malloc,--export=free,--export=__wasm_call_ctors -Wl,--strip-all,--no-entry -Wl,--allow-undefined -Wl,--gc-sections  -o /tmp/output/${FILENAME%.*}-wasi-libc.wasm /tmp/host/${FILENAME}
 
         cargo run -p hyperlight-wasm-aot compile ${OUTPUT_DIR}/${FILENAME%.*}-wasi-libc.wasm ${OUTPUT_DIR}/${FILENAME%.*}.aot
     done

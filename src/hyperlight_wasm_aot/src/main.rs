@@ -72,8 +72,10 @@ fn main() {
                     path.to_str().unwrap().to_string().clone()
                 }
             };
-            println!("Aot Compiling {} to {}", infile, outfile);
-            let config = get_config();
+            println!("Aot Compiling {} to {} with debug", infile, outfile);
+            let mut config = get_config();
+            
+            config.debug_info(true);
             let engine = Engine::new(&config).unwrap();
             let bytes = std::fs::read(infile).unwrap();
             let serialized = if args.get_flag("component") {

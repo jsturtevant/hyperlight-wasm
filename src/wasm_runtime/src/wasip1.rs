@@ -81,6 +81,27 @@ pub(crate) fn register_handlers<T: 'static>(linker: &mut Linker<T>) -> Result<()
     linker.func_wrap("wasi_snapshot_preview1", "fd_close", |fd: i32| -> i32 {
         panic!("fd_close called {}", fd);
     })?;
+    linker.func_wrap("wasi_snapshot_preview1", "proc_exit", |fd: i32| {
+        panic!("proc_exit called {}", fd);
+    })?;
+    linker.func_wrap("wasi_snapshot_preview1", "clock_time_get", |fd: i32, p2: i64, p3: i32| -> i32 {
+        panic!("proc_exit called {}", fd);
+    })?;
+    linker.func_wrap("wasi_snapshot_preview1", "environ_sizes_get", |fd: i32, p2: i32| -> i32 {
+        panic!("proc_exit called {}", fd);
+    })?;
+    linker.func_wrap("wasi_snapshot_preview1", "environ_get", |fd: i32, p2: i32| -> i32 {
+        panic!("proc_exit called {}", fd);
+    })?;
+     linker.func_wrap("wasi_snapshot_preview1", "fd_read", |fd: i32, p2: i32, p3: i32, p4: i32|  -> i32 {
+        panic!("proc_exit called {}", fd);
+    })?;
+    linker.func_wrap("env", "segfault", || ->() {
+        panic!("segfault called");
+    })?;
+    linker.func_wrap("env", "alignfault", ||  -> () {
+        panic!("alignfault called");
+    })?;
     linker.func_wrap(
         "wasi_snapshot_preview1",
         "random_get",
