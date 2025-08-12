@@ -16,10 +16,12 @@ limitations under the License.
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 __attribute__((export_name("Hello"))) 
 int Hello()
 {
+   
     printf("Hello from Wasm in Hyperlight \n");
     return 0;
 }
@@ -28,6 +30,16 @@ int Hello()
 __attribute__((export_name("HelloWorld"))) 
 int HelloWorld(char* msg)
 {
+    float f = 1.331000f;
+    int i = 24;
+    float vf = lrintf(f*i);
+    printf("answer: %f\n", vf);
+    int v = (int)vf;
+    printf("answer is: %d, should be 32\n", v);
+    if (v !=32) {
+        fflush(stdout); 
+        return -1;
+    }
     printf("%s\n", msg);
 
     char* buf = malloc(1024);
@@ -44,5 +56,6 @@ int HelloWorld(char* msg)
     free(buf);
     free(msg); // Free the msg since we own it
 
+    fflush(stdout); 
     return 0;
 }
