@@ -105,7 +105,6 @@ fn build_wasm_runtime() -> PathBuf {
     let out_dir = env::var_os("OUT_DIR").unwrap();
 
     let target_dir = Path::new("").join(&out_dir).join("target");
-    let toolchain_dir = Path::new("").join(&out_dir).join("toolchain");
 
     let in_repo_dir = get_wasm_runtime_path();
 
@@ -126,17 +125,16 @@ fn build_wasm_runtime() -> PathBuf {
 
     let mut cargo_cmd = std::process::Command::new(&cargo_bin);
     let cmd = cargo_cmd
+        .arg("hyperlight")
         .arg("build")
+        .arg("--target-dir")
+        .arg(&target_dir)
         .arg("--profile")
         .arg(cargo_profile)
         .arg("-v")
-        .arg("--target-dir")
-        .arg(&target_dir)
         .current_dir(&in_repo_dir)
         .env_clear()
-        .envs(env_vars)
-        .env("PATH", path_with(&toolchain_dir))
-        .env("HYPERLIGHT_GUEST_TOOLCHAIN_ROOT", &toolchain_dir);
+        .envs(env_vars);
     let status = cmd
         .status()
         .unwrap_or_else(|e| panic!("could not run cargo build wasm_runtime: {}", e));
@@ -144,7 +142,7 @@ fn build_wasm_runtime() -> PathBuf {
         panic!("could not compile wasm_runtime");
     }
     let resource = target_dir
-        .join("x86_64-unknown-none")
+        .join("x86_64-hyperlight-none")
         .join(profile)
         .join("wasm_runtime");
 
