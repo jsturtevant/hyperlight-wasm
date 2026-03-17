@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 
@@ -76,12 +76,12 @@ impl WasmSandbox {
             && obj.hasattr("name")?
         {
             let name: String = obj.getattr("name")?.extract()?;
-            let handler: Py<PyAny> = obj.getattr("handler")?.unbind();
-            (name, handler)
+            let wrapper = make_sdk_tool_wrapper(py, obj)?;
+            (name, wrapper)
         } else {
             let name: String = obj.extract()?;
             let cb = callback.ok_or_else(|| {
-                PyRuntimeError::new_err(
+                PyTypeError::new_err(
                     "register_tool() expects (name, callable) or a Tool object",
                 )
             })?;
@@ -156,6 +156,61 @@ impl WasmSandbox {
         self.inner = Some(sandbox);
         Ok(())
     }
+}
+
+/// Create a Python wrapper around an SDK Tool object that handles async handlers.
+///
+/// SDK `define_tool()` wraps handlers as async coroutines. The sandbox dispatches
+/// tools synchronously, so we need a sync wrapper that properly awaits the async handler
+/// and unwraps the SDK's `textResultForLlm` envelope.
+fn make_sdk_tool_wrapper(py: Python<'_>, tool: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    let wrapper_module = PyModule::from_code(
+        py,
+        c"
+def _make_sdk_wrapper(tool):
+    import ast
+    import asyncio
+    import concurrent.futures
+
+    def _invoke_sync(invocation):
+        return asyncio.run(tool.handler(invocation))
+
+    def wrapper(**kwargs):
+        invocation = {
+            'arguments': kwargs,
+            'tool_call_id': 'sandbox',
+            'tool_name': tool.name,
+        }
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(_invoke_sync, invocation).result()
+        else:
+            result = _invoke_sync(invocation)
+
+        # The SDK serializes return values to textResultForLlm (a string).
+        # Deserialize back to a Python object so guest code gets real types.
+        if isinstance(result, dict) and 'textResultForLlm' in result:
+            text = result['textResultForLlm']
+            try:
+                return ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                return text
+        return result
+
+    return wrapper
+",
+        c"_sdk_tool_wrapper.py",
+        c"_sdk_tool_wrapper",
+    )?;
+
+    let make_wrapper = wrapper_module.getattr("_make_sdk_wrapper")?;
+    Ok(make_wrapper.call1((tool,))?.unbind())
 }
 
 fn json_to_py(py: Python<'_>, val: &serde_json::Value) -> PyResult<Py<PyAny>> {

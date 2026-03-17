@@ -169,3 +169,18 @@ python-run:
 
 python-demo:
     {{ wit-world-sandbox }} .venv/bin/python examples/python-sdk/capabilities_demo.py
+
+# AGENT FRAMEWORK EXAMPLES
+# Prerequisites: pip install github-copilot-sdk pydantic (or agent-framework-github-copilot --pre)
+
+copilot-sdk-example:
+    {{ wit-world-sandbox }} .venv/bin/python examples/copilot-sdk/copilot_sdk_tools.py
+
+agent-framework-example:
+    {{ wit-world-sandbox }} .venv/bin/python examples/agent-framework/copilot_agent.py
+
+agent-framework-example-interactive:
+    {{ wit-world-sandbox }} .venv/bin/python examples/agent-framework/copilot_agent.py --interactive
+
+agent-framework-example-devui:
+    {{ wit-world-sandbox }} .venv/bin/python examples/agent-framework/copilot_agent.py --devui
