@@ -15,6 +15,7 @@ Wraps the SandboxBuilder → LoadedWasmSandbox chain with a convenient PythonSan
 [dependencies]
 hyperlight-wasm = { path = "../hyperlight_wasm" }
 hyperlight-host.workspace = true
+hyperlight-common.workspace = true
 hyperlight-component-macro.workspace = true
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

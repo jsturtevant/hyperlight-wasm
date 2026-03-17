@@ -1633,6 +1633,7 @@ name = "hyperlight-sandbox"
 version = "0.13.0"
 dependencies = [
  "anyhow",
+ "hyperlight-common",
  "hyperlight-component-macro",
  "hyperlight-host",
  "hyperlight-wasm",

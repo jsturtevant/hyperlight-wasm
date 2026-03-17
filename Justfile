@@ -133,7 +133,7 @@ guest-build-wasm:
     cd src/python_sandbox && ../../.venv/bin/componentize-py \
         -d wit/hyperlight-sandbox.wit \
         -w python-sandbox \
-        componentize --stub-wasi \
+        componentize \
         sandbox_executor \
         -o python-sandbox.wasm
 
@@ -142,13 +142,13 @@ guest-build-aot target=default-target features="": guest-build-wasm
         src/python_sandbox/python-sandbox.wasm \
         src/python_sandbox/python-sandbox.aot
 
-guest-compile-wit:
-    wasm-tools component wit src/python_sandbox/wit/hyperlight-sandbox.wit -w -o src/python_sandbox/wit/python-sandbox-world.wasm
+guest-compile-wit: guest-build-wasm
+    wasm-tools component wit src/python_sandbox/python-sandbox.wasm -w -o src/python_sandbox/wit/python-sandbox-world.wasm
 
 guest-bindings:
     cd src/python_sandbox && ../../.venv/bin/componentize-py -d wit/hyperlight-sandbox.wit -w python-sandbox bindings .
 
-guest-build target=default-target features="": (guest-compile-wit) (guest-build-aot target features)
+guest-build target=default-target features="": (guest-build-wasm) (guest-compile-wit) (guest-build-aot target features)
 
 guest-clean:
     rm -f src/python_sandbox/python-sandbox.wasm src/python_sandbox/python-sandbox.aot

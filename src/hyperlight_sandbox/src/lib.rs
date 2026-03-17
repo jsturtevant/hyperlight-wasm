@@ -26,6 +26,8 @@ mod bindings {
     hyperlight_component_macro::host_bindgen!("../python_sandbox/wit/python-sandbox-world.wasm");
 }
 
+mod wasi_impl;
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -122,9 +124,90 @@ pub struct HostState {
 }
 
 #[allow(refining_impl_trait)]
-impl bindings::hyperlight::sandbox::PythonSandboxImports for HostState {
+impl bindings::root::component::RootImports for HostState {
     type Tools = HostState;
     fn tools(&mut self) -> &mut Self { self }
+
+    type Environment = HostState;
+    fn environment(&mut self) -> &mut Self { self }
+
+    type Exit = HostState;
+    fn exit(&mut self) -> &mut Self { self }
+
+    type Error = HostState;
+    fn error(&mut self) -> &mut Self { self }
+
+    type Poll = HostState;
+    fn poll(&mut self) -> &mut Self { self }
+
+    type Streams = HostState;
+    fn streams(&mut self) -> &mut Self { self }
+
+    type Stdin = HostState;
+    fn stdin(&mut self) -> &mut Self { self }
+
+    type Stdout = HostState;
+    fn stdout(&mut self) -> &mut Self { self }
+
+    type Stderr = HostState;
+    fn stderr(&mut self) -> &mut Self { self }
+
+    type TerminalInput = HostState;
+    fn terminal_input(&mut self) -> &mut Self { self }
+
+    type TerminalOutput = HostState;
+    fn terminal_output(&mut self) -> &mut Self { self }
+
+    type TerminalStdin = HostState;
+    fn terminal_stdin(&mut self) -> &mut Self { self }
+
+    type TerminalStdout = HostState;
+    fn terminal_stdout(&mut self) -> &mut Self { self }
+
+    type TerminalStderr = HostState;
+    fn terminal_stderr(&mut self) -> &mut Self { self }
+
+    type MonotonicClock = HostState;
+    fn monotonic_clock(&mut self) -> &mut Self { self }
+
+    type WallClock = HostState;
+    fn wall_clock(&mut self) -> &mut Self { self }
+
+    type Types = HostState;
+    fn types(&mut self) -> &mut Self { self }
+
+    type Preopens = HostState;
+    fn preopens(&mut self) -> &mut Self { self }
+
+    type Network = HostState;
+    fn network(&mut self) -> &mut Self { self }
+
+    type InstanceNetwork = HostState;
+    fn instance_network(&mut self) -> &mut Self { self }
+
+    type Udp = HostState;
+    fn udp(&mut self) -> &mut Self { self }
+
+    type UdpCreateSocket = HostState;
+    fn udp_create_socket(&mut self) -> &mut Self { self }
+
+    type Tcp = HostState;
+    fn tcp(&mut self) -> &mut Self { self }
+
+    type TcpCreateSocket = HostState;
+    fn tcp_create_socket(&mut self) -> &mut Self { self }
+
+    type IpNameLookup = HostState;
+    fn ip_name_lookup(&mut self) -> &mut Self { self }
+
+    type Random = HostState;
+    fn random(&mut self) -> &mut Self { self }
+
+    type Insecure = HostState;
+    fn insecure(&mut self) -> &mut Self { self }
+
+    type InsecureSeed = HostState;
+    fn insecure_seed(&mut self) -> &mut Self { self }
 }
 
 impl bindings::hyperlight::sandbox::Tools for HostState {
@@ -148,7 +231,7 @@ impl bindings::hyperlight::sandbox::Tools for HostState {
 
 /// A ready-to-use Python execution sandbox backed by hyperlight-wasm.
 pub struct PythonSandbox {
-    sandbox: bindings::PythonSandboxSandbox<HostState, LoadedWasmSandbox>,
+    sandbox: bindings::RootSandbox<HostState, LoadedWasmSandbox>,
 }
 
 impl PythonSandbox {
@@ -181,7 +264,7 @@ impl PythonSandbox {
             .context("failed to load Wasm module")?;
 
         Ok(Self {
-            sandbox: bindings::PythonSandboxSandbox { sb, rt },
+            sandbox: bindings::RootSandbox { sb, rt },
         })
     }
 
@@ -203,7 +286,7 @@ impl PythonSandbox {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let sandbox = unsafe {
                 &mut *(sandbox_ptr
-                    as *mut bindings::PythonSandboxSandbox<HostState, LoadedWasmSandbox>)
+                    as *mut bindings::RootSandbox<HostState, LoadedWasmSandbox>)
             };
             sandbox.run(code_owned)
         }));
