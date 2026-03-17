@@ -192,6 +192,7 @@ impl PythonSandbox {
         // The macro-generated run() panics on guest errors (e.g. GPF from
         // stubbed WASI calls). Catch the panic and return it as an error
         // result so callers get a clean ExecutionResult instead of a crash.
+        // https://github.com/hyperlight-dev/hyperlight/issues/1316
         let code_owned = code.to_string();
         let sandbox_ptr = &mut self.sandbox as *mut _ as usize;
 

@@ -505,3 +505,4 @@ src/python_sandbox/python-sandbox.wasm
 src/python_sandbox/python-sandbox.aot
 # Python venv
 .venv/
+python/hyperlight_sandbox/_native.cpython-312-x86_64-linux-gnu.so
