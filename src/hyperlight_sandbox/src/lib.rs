@@ -107,10 +107,10 @@ impl Default for ToolRegistry {
 }
 
 // ---------------------------------------------------------------------------
-// WIT host interface implementation (Phase 1: no imports to implement)
+// WIT host interface implementation
 // ---------------------------------------------------------------------------
 
-/// Host state for the component. Phase 1 has no imports to implement.
+/// Host state — Phase 1 has no imports to implement.
 pub struct HostState {}
 
 impl bindings::hyperlight::sandbox::PythonSandboxImports for HostState {}
@@ -149,7 +149,7 @@ impl PythonSandbox {
             .context("failed to load Wasm module")?;
 
         Ok(Self {
-            sandbox: bindings::PythonSandboxSandbox::<HostState, LoadedWasmSandbox> { sb, rt },
+            sandbox: bindings::PythonSandboxSandbox { sb, rt },
             tools: ToolRegistry::new(),
         })
     }

@@ -152,3 +152,8 @@ guest-build target=default-target features="": (guest-compile-wit) (guest-build-
 
 guest-clean:
     rm -f src/python_sandbox/python-sandbox.wasm src/python_sandbox/python-sandbox.aot
+
+wit-world-sandbox := if os() == "windows" { "$env:WIT_WORLD=\"" + justfile_directory() + "\\src\\python_sandbox\\wit\\python-sandbox-world.wasm" + "\";" } else { "WIT_WORLD=" + justfile_directory() + "/src/python_sandbox/wit/python-sandbox-world.wasm" }
+
+guest-run target=default-target features="":
+    {{ wit-world-sandbox }} cargo run {{ if features =="" {''} else {"--no-default-features -F " + features } }} --profile={{ if target == "debug" {"dev"} else { target } }} -p hyperlight-sandbox --example hello
