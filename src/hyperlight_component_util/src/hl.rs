@@ -97,8 +97,8 @@ pub fn emit_hl_unmarshal_toplevel_value(
                 let flag_checks = ns.iter().enumerate().map(|(i, n)| {
                     let byte_offset = i / 8;
                     let bit_offset = i % 8;
-                    // wasmtime flags! constants use the same name as kebab_to_var (snake_case)
-                    let const_name = kebab_to_var(n.name);
+                    // Use r# to make valid Rust ident for flags constants
+                    let const_name = format_ident!("r#{}", n.name.replace('-', "_"));
                     quote! {
                         if (#id[#byte_offset] >> #bit_offset) & 0x1 == 1 {
                             result = result | #tname::#const_name;

@@ -405,8 +405,10 @@ fn emit_value_toplevel(s: &mut State, v: Option<u32>, id: Ident, vt: &Value) -> 
                 // Use wasmtime's flags! macro which implements Lift/Lower/ComponentType
                 let flag_names = ns.iter().map(|n| {
                     let orig_name = n.name;
-                    let id = kebab_to_var(orig_name);
-                    quote! { const #id; }
+                    // Keep original kebab-case names for component type matching
+                    let id = format_ident!("r#{}", orig_name.replace('-', "_"));
+                    let name_str = orig_name;
+                    quote! { #[component(name = #name_str)] const #id; }
                 }).collect::<Vec<_>>();
                 quote! {
                     ::wasmtime::component::flags! {

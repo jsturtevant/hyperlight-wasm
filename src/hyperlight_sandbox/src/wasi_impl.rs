@@ -434,6 +434,58 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
     ) -> Result<fs_types::MetadataHashValue, fs_types::ErrorCode> {
         Err(fs_types::ErrorCode::Unsupported)
     }
+    fn get_flags(
+        &mut self,
+        _self_: BorrowedResourceGuard<u32>,
+    ) -> Result<fs_types::DescriptorFlags, fs_types::ErrorCode> {
+        Err(fs_types::ErrorCode::Unsupported)
+    }
+    fn stat_at(
+        &mut self,
+        _self_: BorrowedResourceGuard<u32>,
+        _path_flags: fs_types::PathFlags,
+        _path: String,
+    ) -> Result<fs_types::DescriptorStat<wall_clock::Datetime>, fs_types::ErrorCode> {
+        Err(fs_types::ErrorCode::Unsupported)
+    }
+    fn set_times_at(
+        &mut self,
+        _self_: BorrowedResourceGuard<u32>,
+        _path_flags: fs_types::PathFlags,
+        _path: String,
+        _data_access_timestamp: fs_types::NewTimestamp<wall_clock::Datetime>,
+        _data_modification_timestamp: fs_types::NewTimestamp<wall_clock::Datetime>,
+    ) -> Result<(), fs_types::ErrorCode> {
+        Err(fs_types::ErrorCode::Unsupported)
+    }
+    fn link_at(
+        &mut self,
+        _self_: BorrowedResourceGuard<u32>,
+        _old_path_flags: fs_types::PathFlags,
+        _old_path: String,
+        _new_descriptor: BorrowedResourceGuard<u32>,
+        _new_path: String,
+    ) -> Result<(), fs_types::ErrorCode> {
+        Err(fs_types::ErrorCode::Unsupported)
+    }
+    fn open_at(
+        &mut self,
+        _self_: BorrowedResourceGuard<u32>,
+        _path_flags: fs_types::PathFlags,
+        _path: String,
+        _open_flags: fs_types::OpenFlags,
+        _flags: fs_types::DescriptorFlags,
+    ) -> Result<u32, fs_types::ErrorCode> {
+        Err(fs_types::ErrorCode::Unsupported)
+    }
+    fn metadata_hash_at(
+        &mut self,
+        _self_: BorrowedResourceGuard<u32>,
+        _path_flags: fs_types::PathFlags,
+        _path: String,
+    ) -> Result<fs_types::MetadataHashValue, fs_types::ErrorCode> {
+        Err(fs_types::ErrorCode::Unsupported)
+    }
 }
 
 impl wasi::filesystem::Types<wall_clock::Datetime, u32, u32, u32> for HostState {
