@@ -1,6 +1,6 @@
 # PRD: `hyperlight_sandbox` — Python SDK for Wasm-Isolated Code Execution
 
-**Status:** Phase 2 Complete
+**Status:** Phase 2.5 Complete
 **Author:** Dutch (Lead Architect)
 **Requested by:** James Sturtevant
 **Date:** 2026-03-16
@@ -723,9 +723,20 @@ hyperlight-wasm/
 │   │   ├── __init__.py            # CodeExecutionTool, SandboxEnvironment, ExecutionResult
 │   │   └── py.typed
 │   ├── src/
-│   │   └── lib.rs                 # PyO3 bindings: WasmSandbox pyclass
+│   │   └── lib.rs                 # PyO3 bindings: WasmSandbox pyclass + SDK tool wrapper
 │   ├── Cargo.toml
 │   └── pyproject.toml
+│
+├── examples/                      # Agent framework examples (Phase 2.5 ✔)
+│   ├── python-sdk/
+│   │   ├── basic.py               # Basic WasmSandbox usage with timing
+│   │   └── capabilities_demo.py   # Capabilities/constraints demo
+│   ├── copilot-sdk/
+│   │   ├── copilot_sdk_tools.py   # Copilot SDK + WasmSandbox integration
+│   │   └── README.md
+│   └── agent-framework/
+│       ├── copilot_agent.py       # Agent Framework + WasmSandbox integration
+│       └── README.md
 │
 └── assets/                        # TODO — Pre-built artifacts
     └── python-sandbox.aot         # Pre-compiled guest component (CI-built)
@@ -738,6 +749,8 @@ hyperlight-wasm/
 3. **Run Rust example**: `just guest-run` (sets `WIT_WORLD` env var automatically)
 4. **PyO3 bindings**: `just python-build` (runs `maturin develop` with `WIT_WORLD`)
 5. **Run Python example**: `just python-run` or `just python-demo`
+6. **Run Copilot SDK example**: `just copilot-sdk-example`
+7. **Run Agent Framework example**: `just agent-framework-example`
 
 > **Critical:** `WIT_WORLD` environment variable must point to `python-sandbox-world.wasm` at runtime. Without it, hyperlight-wasm cannot resolve component export function names. The Justfile `guest-run` target sets this automatically.
 
@@ -816,23 +829,38 @@ stderr: ""
 
 **Exit criteria met:** `sandbox.register_tool("add", lambda a=0, b=0: a + b)` + guest `call_tool("add", a=1, b=2)` returns `3`. ✔
 
-### Phase 2.5: Agent Framework Integration Examples ← NEXT
+### Phase 2.5: Agent Framework Integration Examples ✔ COMPLETE
 
 **Goal:** Port the Copilot SDK and Agent Framework examples from hyperlight-unikraft to hyperlight-sandbox, demonstrating real-world agent loop integration.
 
-**Reference implementations:** `hyperlight-unikraft/examples/copilot-sdk/copilot_sdk_tools.py` and `hyperlight-unikraft/examples/agent-framework/copilot_agent.py`.
+**Result:** Both examples run end-to-end with live Copilot sessions. Model calls `execute_code`, guest code calls `call_tool('compute', ...)` and `call_tool('fetch_data', ...)`, results flow back through the agent loop.
 
-| Task | Layer | Details |
-|------|-------|---------|
-| Port Copilot SDK example | Python | `examples/copilot-sdk/copilot_sdk_tools.py` — `define_tool`, `CopilotClient` sessions, `execute_code` tool wrapping `WasmSandbox` |
-| Port Agent Framework example | Python | `examples/agent-framework/copilot_agent.py` — `GitHubCopilotAgent` with `execute_code`, `compute`, `fetch_data` tools |
-| SDK Tool object support in `register_tool()` | Python | Verify `sandbox.register_tool(sdk_tool)` works with Copilot SDK `Tool` objects (`.name` + `.handler` attrs) |
-| System prompt patterns | Docs | Document the prompt pattern: steer model to use `execute_code` → `call_tool()` inside sandbox |
-| Just targets for examples | Build | `just copilot-sdk-example`, `just agent-framework-example` |
+**Performance with snapshot/restore:**
+- Sandbox init + snapshot (one-time, at startup): ~1150ms
+- Subsequent `execute_code` calls (restore + run): ~15-30ms
+- Warm `run()` without restore: ~0.3ms
 
-**Exit criteria:** Both examples run end-to-end with a Copilot session — model calls `execute_code`, guest code calls `call_tool('compute', ...)` and `call_tool('fetch_data', ...)`, results flow back through the agent loop.
+**Implementation learnings:**
+- SDK `define_tool()` wraps handlers as async coroutines. PyO3 bindings dispatch tools synchronously, so `register_tool(sdk_tool)` needs a `make_sdk_tool_wrapper()` that calls `asyncio.run()` and unwraps the `textResultForLlm` envelope. Ported from hyperlight-unikraft.
+- Register raw sync functions on the sandbox (not SDK Tool objects). SDK Tools are for the Copilot session; the sandbox needs plain sync callables.
+- System prompt must explicitly say "you do NOT have direct access to data — NEVER hardcode" and the `execute_code` tool description must mention `call_tool()`. Without this, the model bypasses `call_tool()` and hardcodes data from tool schemas.
+- Snapshot/restore at startup eliminates cold start penalty for subsequent calls: ~680ms cold start → ~15ms with restore.
+- `call_tool` is injected as a built-in global via `exec()` globals dict AND available via `from hyperlight import call_tool`. System prompts should mention both.
 
-### Phase 3: File I/O + Snapshots
+| Task | Status | Details |
+|------|--------|---------|
+| Port Copilot SDK example | ✔ | `examples/copilot-sdk/copilot_sdk_tools.py` — `define_tool`, `CopilotClient`, snapshot/restore |
+| Port Agent Framework example | ✔ | `examples/agent-framework/copilot_agent.py` — `GitHubCopilotAgent`, `--interactive`, `--devui` |
+| SDK Tool async wrapper in PyO3 | ✔ | `python/src/lib.rs` — `make_sdk_tool_wrapper()` handles async handlers + `textResultForLlm` |
+| Snapshot/restore in examples | ✔ | Both examples init sandbox at startup, snapshot, restore before each `execute_code` |
+| System prompt patterns | ✔ | Mandatory `call_tool()` usage, no-hardcode directive, tool descriptions include `call_tool` |
+| Just targets for examples | ✔ | `just copilot-sdk-example`, `just agent-framework-example`, `just agent-framework-example-interactive` |
+| READMEs | ✔ | `examples/copilot-sdk/README.md`, `examples/agent-framework/README.md` |
+| Timing in basic example | ✔ | `examples/python-sdk/basic.py` — cold start, warm run, tool dispatch, snapshot/restore timings |
+
+**Exit criteria met:** Both examples run end-to-end — model calls `execute_code`, guest code calls `call_tool('compute', ...)` and `call_tool('fetch_data', ...)`, results flow back. ✔
+
+### Phase 3: File I/O + Snapshots ← NEXT
 
 **Goal:** WASI filesystem I/O, persistent file loading, and snapshot/restore.
 

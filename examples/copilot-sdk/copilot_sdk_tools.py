@@ -162,15 +162,18 @@ def fetch_data(params: FetchDataParams) -> list[dict[str, Any]]:
     return _SIMULATED_DATA.get(params.table, [])
 
 
-def _create_sandbox():
-    """Create a WasmSandbox with SDK tools registered as host callbacks.
+# --- Sandbox singleton with snapshot/restore ---
+# The sandbox is created once at startup (cold start ~680ms), snapshotted, then
+# restored before each execute_code call for clean state with fast startup.
 
-    Returns:
-        WasmSandbox instance with compute and fetch_data tools registered.
+_sandbox = None
+_snapshot = None
 
-    Raises:
-        RuntimeError: If the AOT module file cannot be found.
-    """
+
+def _init_sandbox():
+    """Initialize the sandbox and take a snapshot. Call once at program start."""
+    global _sandbox, _snapshot
+    import time as _time
     from hyperlight_sandbox import WasmSandbox
 
     _default_module = "src/python_sandbox/python-sandbox.aot"
@@ -183,14 +186,25 @@ def _create_sandbox():
             f"Run from repo root, or set HYPERLIGHT_MODULE."
         )
 
-    sandbox = WasmSandbox(module_path=module_path)
+    start = _time.perf_counter()
+    _sandbox = WasmSandbox(module_path=module_path)
 
     # Register raw functions as host callbacks (not SDK Tool objects).
     # SDK Tools are for the Copilot session; the sandbox needs plain sync callables.
-    sandbox.register_tool("compute", lambda **kw: compute(ComputeParams(**kw)))
-    sandbox.register_tool("fetch_data", lambda **kw: fetch_data(FetchDataParams(**kw)))
+    _sandbox.register_tool("compute", lambda **kw: compute(ComputeParams(**kw)))
+    _sandbox.register_tool("fetch_data", lambda **kw: fetch_data(FetchDataParams(**kw)))
 
-    return sandbox
+    # Warm up the sandbox (first run triggers init) and snapshot clean state
+    _sandbox.run('None')
+    _snapshot = _sandbox.snapshot()
+    elapsed_ms = (_time.perf_counter() - start) * 1000
+    print(f"\U0001f4f8 Sandbox initialized and snapshotted ({elapsed_ms:.0f}ms)")
+
+
+def _get_sandbox():
+    """Restore sandbox to clean snapshot state and return it."""
+    _sandbox.restore(_snapshot)
+    return _sandbox
 
 
 async def execute_code(params: ExecuteCodeParams) -> str:
@@ -199,6 +213,8 @@ async def execute_code(params: ExecuteCodeParams) -> str:
     The sandbox has call_tool() available as a built-in global:
         result = call_tool("tool_name", key=value, ...)
 
+    Uses snapshot/restore to reset state between calls.
+
     Returns:
         Execution output (stdout) or error message.
     """
@@ -206,7 +222,7 @@ async def execute_code(params: ExecuteCodeParams) -> str:
 
     try:
         print(f"--- Copilot generated code ---\n{params.code}\n--- end ---\n")
-        sandbox = _create_sandbox()
+        sandbox = _get_sandbox()
 
         start = time.perf_counter()
         result = sandbox.run(code=params.code)
@@ -262,6 +278,8 @@ async def run_copilot_demo():
         return
 
     print("=== GitHub Copilot SDK + Hyperlight Wasm Demo ===\n")
+
+    _init_sandbox()  # pay cold start once, upfront
 
     client = CopilotClient()
     await client.start()

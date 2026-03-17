@@ -86,7 +86,18 @@ def _default_module_path() -> Path:
     return _repo_root() / "src/python_sandbox/python-sandbox.aot"
 
 
-def _create_sandbox() -> WasmSandbox:
+# --- Sandbox singleton with snapshot/restore ---
+# The sandbox is created once at startup (cold start ~680ms), snapshotted, then
+# restored before each execute_code call for clean state with fast startup.
+
+_sandbox = None
+_snapshot = None
+
+
+def _init_sandbox() -> None:
+    """Initialize the sandbox and take a snapshot. Call once at program start."""
+    global _sandbox, _snapshot
+
     default_module = _default_module_path()
     module_path = Path(os.environ.get("HYPERLIGHT_MODULE", str(default_module)))
 
@@ -97,18 +108,31 @@ def _create_sandbox() -> WasmSandbox:
             "Build the python-sandbox AOT module first, or set HYPERLIGHT_MODULE."
         )
 
-    sandbox = WasmSandbox(module_path=str(module_path))
-    sandbox.register_tool("compute", lambda **kw: compute(**kw))
-    sandbox.register_tool("fetch_data", lambda **kw: fetch_data(**kw))
-    return sandbox
+    start = time.perf_counter()
+    _sandbox = WasmSandbox(module_path=str(module_path))
+    _sandbox.register_tool("compute", lambda **kw: compute(**kw))
+    _sandbox.register_tool("fetch_data", lambda **kw: fetch_data(**kw))
+
+    # Warm up the sandbox (first run triggers init) and snapshot clean state
+    _sandbox.run('None')
+    _snapshot = _sandbox.snapshot()
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    print(f"\U0001f4f8 Sandbox initialized and snapshotted ({elapsed_ms:.0f}ms)")
+
+
+def _get_sandbox() -> WasmSandbox:
+    """Restore sandbox to clean snapshot state and return it."""
+    _sandbox.restore(_snapshot)
+    return _sandbox
 
 
 async def execute_code(
     code: Annotated[str, Field(description="Python code to execute in an isolated Hyperlight Wasm sandbox. Use call_tool('fetch_data', table=...) and call_tool('compute', operation=..., a=..., b=...) inside the code to access data and perform calculations. NEVER hardcode data.")],
 ) -> str:
+    """Execute code with snapshot/restore for clean state between calls."""
     try:
         print(f"--- Copilot generated code ---\n{code}\n--- end ---\n")
-        sandbox = _create_sandbox()
+        sandbox = _get_sandbox()
         start = time.perf_counter()
         result = sandbox.run(code=code)
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -141,6 +165,7 @@ def create_agent() -> GitHubCopilotAgent:
 
 
 async def main() -> None:
+    _init_sandbox()  # pay cold start once, upfront
     agent = create_agent()
     async with agent:
         session = agent.create_session()
@@ -173,6 +198,7 @@ if __name__ == "__main__":
     import sys
     if "--devui" in sys.argv:
         from agent_framework.devui import serve
+        _init_sandbox()  # pay cold start once, upfront
         agent = create_agent()
         serve(entities=[agent], auto_open=True)
     else:
