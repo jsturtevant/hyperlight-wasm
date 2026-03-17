@@ -157,3 +157,12 @@ wit-world-sandbox := if os() == "windows" { "$env:WIT_WORLD=\"" + justfile_direc
 
 guest-run target=default-target features="":
     {{ wit-world-sandbox }} cargo run {{ if features =="" {''} else {"--no-default-features -F " + features } }} --profile={{ if target == "debug" {"dev"} else { target } }} -p hyperlight-sandbox --example hello
+
+# PYTHON SDK (hyperlight-sandbox)
+# Prerequisites: pip install maturin (in .venv)
+
+python-build:
+    cd python && {{ wit-world-sandbox }} ../.venv/bin/maturin develop
+
+python-run:
+    {{ wit-world-sandbox }} .venv/bin/python examples/python-sdk/basic.py
