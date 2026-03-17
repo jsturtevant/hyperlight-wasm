@@ -1,0 +1,19 @@
+[package]
+name = "hyperlight-wasm-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = """
+High-level Rust host library for running Python code in hyperlight-wasm sandboxes.
+Wraps the SandboxBuilder → LoadedWasmSandbox chain with a convenient PythonSandbox API.
+"""
+
+[dependencies]
+hyperlight-wasm = { path = "../hyperlight_wasm" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

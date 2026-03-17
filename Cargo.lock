@@ -1685,6 +1685,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperlight-wasm-host"
+version = "0.13.0"
+dependencies = [
+ "anyhow",
+ "hyperlight-wasm",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hyperlight-wasm-macro"
 version = "0.13.0"
 dependencies = [

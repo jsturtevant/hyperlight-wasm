@@ -1,0 +1,16 @@
+package hyperlight:sandbox;
+
+interface executor {
+    record execution-result {
+        stdout: string,
+        stderr: string,
+        exit-code: s32,
+    }
+
+    /// Execute Python code and return captured output.
+    run: func(code: string) -> execution-result;
+}
+
+world python-sandbox {
+    export executor;
+}

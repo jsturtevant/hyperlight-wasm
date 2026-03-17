@@ -125,3 +125,24 @@ bench-download os hypervisor cpu tag="":
     gh release download {{ tag }} -D ./src/hyperlight_wasm/target/ -p benchmarks_{{ os }}_{{ hypervisor }}_{{ cpu }}.tar.gz
     mkdir {{ mkdir-arg }} ./src/hyperlight_wasm/target/criterion
     tar -zxvf ./src/hyperlight_wasm/target/benchmarks_{{ os }}_{{ hypervisor }}_{{ cpu }}.tar.gz -C ./src/hyperlight_wasm/target/criterion/ --strip-components=1
+
+# GUEST COMPONENT (python-sandbox)
+# Prerequisites: pip install componentize-py
+
+guest-build-wasm:
+    cd src/guest && componentize-py \
+        --wit-path wit/hyperlight-sandbox.wit \
+        --world python-sandbox \
+        componentize \
+        -o python-sandbox.wasm \
+        sandbox_executor
+
+guest-build-aot target=default-target features="": guest-build-wasm
+    cargo run -p hyperlight-wasm-aot compile --component \
+        src/guest/python-sandbox.wasm \
+        src/guest/python-sandbox.aot
+
+guest-build target=default-target features="": (guest-build-aot target features)
+
+guest-clean:
+    rm -f src/guest/python-sandbox.wasm src/guest/python-sandbox.aot
