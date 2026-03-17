@@ -166,3 +166,6 @@ python-build:
 
 python-run:
     {{ wit-world-sandbox }} .venv/bin/python examples/python-sdk/basic.py
+
+python-demo:
+    {{ wit-world-sandbox }} .venv/bin/python examples/python-sdk/capabilities_demo.py
