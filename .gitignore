@@ -497,3 +497,11 @@ src/wasmsamples/components/bindings/
 .squad/casting/registry.json
 .squad/decisions/inbox/copilot-directive-plan-before-code.md
 .squad/decisions/inbox/dutch-prd-decisions.md
+
+# componentize-py generated bindings
+src/python_sandbox/wit_world/
+# componentize-py build artifacts
+src/python_sandbox/python-sandbox.wasm
+src/python_sandbox/python-sandbox.aot
+# Python venv
+.venv/

@@ -130,19 +130,25 @@ bench-download os hypervisor cpu tag="":
 # Prerequisites: pip install componentize-py
 
 guest-build-wasm:
-    cd src/guest && componentize-py \
-        --wit-path wit/hyperlight-sandbox.wit \
-        --world python-sandbox \
-        componentize \
-        -o python-sandbox.wasm \
-        sandbox_executor
+    cd src/python_sandbox && componentize-py \
+        -d wit/hyperlight-sandbox.wit \
+        -w python-sandbox \
+        componentize --stub-wasi \
+        sandbox_executor \
+        -o python-sandbox.wasm
 
 guest-build-aot target=default-target features="": guest-build-wasm
-    cargo run -p hyperlight-wasm-aot compile --component \
-        src/guest/python-sandbox.wasm \
-        src/guest/python-sandbox.aot
+    cargo run {{ if features =="" {''} else if features=="no-default-features" {"--no-default-features" } else {"--features " + features } }} -p hyperlight-wasm-aot compile --component \
+        src/python_sandbox/python-sandbox.wasm \
+        src/python_sandbox/python-sandbox.aot
 
-guest-build target=default-target features="": (guest-build-aot target features)
+guest-compile-wit:
+    wasm-tools component wit src/python_sandbox/wit/hyperlight-sandbox.wit -w -o src/python_sandbox/wit/python-sandbox-world.wasm
+
+guest-bindings:
+    cd src/python_sandbox && componentize-py -d wit/hyperlight-sandbox.wit -w python-sandbox bindings .
+
+guest-build target=default-target features="": (guest-compile-wit) (guest-build-aot target features)
 
 guest-clean:
-    rm -f src/guest/python-sandbox.wasm src/guest/python-sandbox.aot
+    rm -f src/python_sandbox/python-sandbox.wasm src/python_sandbox/python-sandbox.aot

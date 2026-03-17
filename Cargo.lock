@@ -1629,6 +1629,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperlight-sandbox"
+version = "0.13.0"
+dependencies = [
+ "anyhow",
+ "hyperlight-component-macro",
+ "hyperlight-host",
+ "hyperlight-wasm",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hyperlight-wasm"
 version = "0.13.0"
 dependencies = [
@@ -1682,16 +1694,6 @@ dependencies = [
  "clap",
  "object 0.38.1",
  "wasmtime",
-]
-
-[[package]]
-name = "hyperlight-wasm-host"
-version = "0.13.0"
-dependencies = [
- "anyhow",
- "hyperlight-wasm",
- "serde",
- "serde_json",
 ]
 
 [[package]]
