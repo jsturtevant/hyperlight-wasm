@@ -1,6 +1,6 @@
 # PRD: `hyperlight_sandbox` — Python SDK for Wasm-Isolated Code Execution
 
-**Status:** Draft
+**Status:** Phase 1 Complete
 **Author:** Dutch (Lead Architect)
 **Requested by:** James Sturtevant
 **Date:** 2026-03-16
@@ -219,7 +219,9 @@ The full WASI dependency chain follows [hyperlight-wasm-http-example](https://gi
 
 ## 5. Rust Host Library API
 
-New crate: `hyperlight-wasm-host` (or a module within the existing workspace).
+New crate: `hyperlight-sandbox` (in workspace at `src/hyperlight_sandbox/`).
+
+> **Implementation note:** The crate uses `hyperlight_component_macro::host_bindgen!` (from the `hyperlight-component-macro` crate, not `hyperlight-wasm-macro`) to generate typed component model bindings. It also requires `hyperlight-host` as a dependency since the macro generates code referencing hyperlight-host types.
 
 ### ToolRegistry
 
@@ -702,41 +704,39 @@ The `hyperlight-wasm-aot` CLI is the existing AOT compiler in `src/hyperlight_wa
 ```
 hyperlight-wasm/
 ├── src/
-│   ├── hyperlight_wasm_host/      # NEW — Rust host library crate
+│   ├── hyperlight_sandbox/         # Rust host library crate (Phase 1 ✔)
 │   │   ├── Cargo.toml
+│   │   ├── examples/
+│   │   │   └── hello.rs               # Smoke test: runs print('hello') in sandbox
 │   │   └── src/
-│   │       ├── lib.rs             # PythonSandbox, ToolRegistry
-│   │       └── wasi_fs.rs         # WASI filesystem setup for /input/, /output/
+│   │       └── lib.rs                 # PythonSandbox, ToolRegistry, ExecutionResult
 │   │
-│   ├── hyperlight_sandbox/        # NEW — PyO3 bindings crate
-│   │   ├── Cargo.toml
-│   │   ├── pyproject.toml         # maturin build config
-│   │   └── src/
-│   │       └── lib.rs             # WasmSandbox pyclass
-│   │
-│   └── guest/                     # NEW — Guest Wasm component
+│   └── python_sandbox/            # Guest Wasm component (Phase 1 ✔)
 │       ├── wit/
-│       │   └── hyperlight-sandbox.wit
-│       ├── sandbox_executor.py
-│       ├── hyperlight.py
-│       └── Makefile               # componentize-py + AOT compile
+│       │   ├── hyperlight-sandbox.wit # Source WIT
+│       │   └── python-sandbox-world.wasm  # Compiled WIT world (for host_bindgen!)
+│       ├── sandbox_executor.py    # Guest Python: Executor class with run()
+│       └── hyperlight.py          # Guest-side hyperlight module (call_tool stub)
 │
-├── python/                        # NEW — Pure Python SDK layer
+├── python/                        # TODO — Pure Python SDK layer
 │   ├── hyperlight_sandbox/
 │   │   ├── __init__.py            # CodeExecutionTool, SandboxEnvironment, ExecutionResult
 │   │   └── py.typed
 │   └── pyproject.toml
 │
-└── assets/                        # NEW — Pre-built artifacts
-    └── python-sandbox.aot         # Pre-compiled guest component (checked in or CI-built)
+└── assets/                        # TODO — Pre-built artifacts
+    └── python-sandbox.aot         # Pre-compiled guest component (CI-built)
 ```
 
 ### Build Steps
 
-1. **Guest component**: `componentize-py` → `.wasm` → `hyperlight-wasm-aot` → `.aot`
-2. **Rust host crate**: `cargo build` (depends on hyperlight-wasm)
-3. **PyO3 bindings**: `maturin build` (depends on Rust host crate)
-4. **Python package**: Standard `pip install .` from `python/` directory
+1. **Guest component**: `just guest-build` (componentize-py → `.wasm` → `hyperlight-wasm-aot --component` → `.aot`)
+2. **Rust host crate**: `cargo build -p hyperlight-sandbox`
+3. **Run example**: `just guest-run` (sets `WIT_WORLD` env var automatically)
+4. **PyO3 bindings**: `maturin build` (TODO — Phase 4)
+5. **Python package**: Standard `pip install .` from `python/` directory (TODO — Phase 4)
+
+> **Critical:** `WIT_WORLD` environment variable must point to `python-sandbox-world.wasm` at runtime. Without it, hyperlight-wasm cannot resolve component export function names. The Justfile `guest-run` target sets this automatically.
 
 ### Package Distribution
 
@@ -754,20 +754,38 @@ hyperlight-wasm/
 
 ## 9. Milestones
 
-### Phase 1: Basic Code Execution
+### Phase 1: Basic Code Execution ✔ COMPLETE
 
 **Goal:** Execute Python code in a Wasm component sandbox, capture stdout/stderr/exit_code.
 
-| Task | Layer | Details |
-|------|-------|---------|
-| Define WIT interface (executor only) | Guest | `executor.run(code) -> execution-result` |
-| Build guest component with componentize-py | Guest | Python interpreter → Wasm → AOT |
-| Create `hyperlight-wasm-host` crate | Rust | `PythonSandbox::new()`, `PythonSandbox::run()` wrapping SandboxBuilder chain |
-| PyO3 `WasmSandbox` with `run()` | Bindings | Basic code execution from Python |
-| `ExecutionResult` dataclass | Python SDK | stdout, stderr, exit_code |
-| Integration test: hello world | Test | End-to-end Python → Rust → Wasm → Python exec |
+**Result:** Working end-to-end. `just guest-build && just guest-run` produces:
+```
+Creating sandbox...
+Running print('hello from wasm!')...
+exit_code: 0
+stdout: "hello from wasm!\n"
+stderr: ""
+```
 
-**Exit criteria:** `sandbox.run('print("hello")')` returns `ExecutionResult(stdout="hello\n", stderr="", exit_code=0)`
+**Implementation learnings:**
+- componentize-py `--stub-wasi` flag is essential — without it, the guest imports full WASI which hyperlight-wasm can't load
+- `componentize-py -d` flag (not `--wit-path`) is the correct syntax
+- Guest must define an `Executor` class (not bare functions) matching the WIT interface
+- Host uses `hyperlight_component_macro::host_bindgen!` (from `hyperlight-component-macro` crate) to generate typed bindings
+- `WIT_WORLD` env var must be set at runtime pointing to `python-sandbox-world.wasm` — hyperlight-wasm uses it to resolve component export names
+- `python-sandbox-world.wasm` must be generated from the **original WIT file** (not extracted from the component, which includes componentize-py internal types)
+- Guest input buffer size (70MB) must be smaller than heap size — default 8MB heap fails
+- Working memory config: heap=200MB, scratch=100MB, input_buffer=70MB
+- AOT-compiled Python component is ~43MB (full CPython interpreter)
+- `io.StringIO` works in componentize-py ✔ (resolved open question #1)
+
+| Task | Status | Details |
+|------|--------|---------|
+| Define WIT interface (executor only) | ✔ | `src/python_sandbox/wit/hyperlight-sandbox.wit` |
+| Build guest component with componentize-py | ✔ | `just guest-build-wasm` with `--stub-wasi` |
+| AOT compile guest | ✔ | `just guest-build-aot` via `hyperlight-wasm-aot compile --component` |
+| Create `hyperlight-sandbox` crate | ✔ | `src/hyperlight_sandbox/` with `host_bindgen!` macro |
+| Integration test: hello world | ✔ | `just guest-run` — `examples/hello.rs` |
 
 ### Phase 2: Tool Dispatch
 
@@ -832,17 +850,21 @@ hyperlight-wasm/
 
 ### Open Questions
 
-1. **Guest Python stdlib availability.** How much of the Python stdlib is available in the componentize-py sandbox? Need to validate that `json`, `io`, `sys` all work. The [componentize-py sandbox example](https://github.com/bytecodealliance/componentize-py/tree/main/examples/sandbox) is the reference.
+1. ~~**Guest Python stdlib availability.**~~ **RESOLVED.** `io.StringIO`, `sys.stdout`/`stderr`, and `exec()` all work in componentize-py with `--stub-wasi`. Confirmed by Phase 1 end-to-end test.
 
-2. **WASI filesystem mapping.** ~~Needs prototyping.~~ **DECIDED:** Use temp directory on host filesystem, mapped as WASI preopen. The host creates a temp dir, writes `add_files()` + per-run `inputs=` into it, and maps it at `/input/`. A second temp dir is mapped at `/output/`. The [hyperlight-wasm-http-example](https://github.com/hyperlight-dev/hyperlight-wasm-http-example) implements `wasi:io` and `wasi:cli` — we extend this pattern to add `wasi:filesystem/types@0.2.3` and `wasi:filesystem/preopens@0.2.3` host functions.
+2. **WASI filesystem mapping.** ~~Needs prototyping.~~ **DECIDED:** Use temp directory on host filesystem, mapped as WASI preopen. Requires removing `--stub-wasi` and implementing WASI host functions (Phase 3). The [hyperlight-wasm-http-example](https://github.com/hyperlight-dev/hyperlight-wasm-http-example) implements `wasi:io` and `wasi:cli` — we extend this pattern.
 
-3. ~~**AOT format compatibility.**~~ **RESOLVED.** `hyperlight-wasm-aot compile --component` supports WASI components. Proven by hyperlight-wasm-http-example.
+3. ~~**AOT format compatibility.**~~ **RESOLVED.** `hyperlight-wasm-aot compile --component` works with componentize-py output. The `--stub-wasi` flag is required for Phase 1 (no WASI host). Without it, loading fails with "incompatible object file format".
 
 4. **Snapshot granularity.** Does `LoadedWasmSandbox::snapshot()` capture full Python interpreter state (heap, globals, etc.) or just Wasm linear memory? Need to verify that Python-level state is fully restored.
 
-5. **Guest module size.** How large is the AOT-compiled Python component? This affects distribution (checked into repo vs. CI artifact vs. separate download).
+5. ~~**Guest module size.**~~ **RESOLVED.** AOT-compiled Python component is ~43MB. Too large for git. Must be CI-built artifact or separate download.
 
 6. **Timeout implementation.** hyperlight-wasm's `max_execution_time` in `SandboxConfiguration` handles this at the hypervisor level. Verify it produces a clean `ExecutionResult` with appropriate exit code on timeout.
+
+7. **WASI transition for Phase 3.** Phase 1 uses `--stub-wasi` which stubs out all WASI. Phase 3 needs real WASI for filesystem access. This means Phase 3 requires: (a) removing `--stub-wasi`, (b) implementing WASI host functions in Rust (port from http-example), (c) regenerating `host_bindgen!` from the WASI-enabled world. This is a significant step.
+
+8. **WIT_WORLD env var.** hyperlight-wasm requires `WIT_WORLD` env var at runtime to resolve component export names. Need to figure out how to embed this into the PyO3 bindings so Python users don't need to set it manually.
 
 ### Future Work
 
