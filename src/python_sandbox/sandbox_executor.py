@@ -15,13 +15,13 @@ from wit_world.exports.executor import ExecutionResult
 import wit_world.imports.tools as tools
 
 
-def _call_tool(name: str, **kwargs):
+def _call_tool(tool_name: str, **kwargs):
     """Call a host-registered tool via WIT tools.dispatch."""
-    args_json = json.dumps(kwargs)
-    result_json = tools.dispatch(name, args_json)
+    request = json.dumps({"name": tool_name, "args": kwargs})
+    result_json = tools.dispatch(request)
     result = json.loads(result_json)
     if "error" in result:
-        raise RuntimeError(f"Tool '{name}' failed: {result['error']}")
+        raise RuntimeError(f"Tool '{tool_name}' failed: {result['error']}")
     return result.get("result")
 
 

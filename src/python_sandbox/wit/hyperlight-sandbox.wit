@@ -13,8 +13,9 @@ interface executor {
 
 interface tools {
     /// Dispatch a tool call to the host.
+    /// Takes JSON: {"name": "...", "args": {...}}
     /// Returns JSON: {"result": ...} or {"error": "..."}.
-    dispatch: func(name: string, args-json: string) -> string;
+    dispatch: func(request-json: string) -> string;
 }
 
 world python-sandbox {

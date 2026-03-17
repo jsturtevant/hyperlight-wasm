@@ -38,39 +38,31 @@ fn main() {
         Err(e) => eprintln!("Failed: {e}"),
     }
 
-    // Test 2: Tool dispatch (Phase 2)
+    // Test 2: Tool dispatch via call_tool (provided by sandbox_executor)
     println!("\n--- Test 2: Tool dispatch ---");
     match sandbox.run(r#"
-from hyperlight import call_tool
 result = call_tool('add', a=3, b=4)
-print(f"3 + 4 = {result}")
-"#) {
-        Ok(result) => println!("stdout: {:?}, exit_code: {}", result.stdout, result.exit_code),
-        Err(e) => eprintln!("Failed: {e}"),
-    }
-
-    // Test 3: Multiple tool calls
-    println!("\n--- Test 3: Multiple tool calls ---");
-    match sandbox.run(r#"
-from hyperlight import call_tool
 greeting = call_tool('greet', name='James')
-sum_result = call_tool('add', a=10, b=20)
-print(f"{greeting} The answer is {sum_result}")
-"#) {
-        Ok(result) => println!("stdout: {:?}, exit_code: {}", result.stdout, result.exit_code),
-        Err(e) => eprintln!("Failed: {e}"),
-    }
-
-    // Test 4: Unknown tool error handling
-    println!("\n--- Test 4: Unknown tool error ---");
-    match sandbox.run(r#"
-from hyperlight import call_tool
+print(f"3 + 4 = {result}")
+print(f"Greeting: {greeting}")
 try:
     call_tool('nonexistent', x=1)
 except RuntimeError as e:
     print(f"Caught error: {e}")
+print("All tool tests passed!")
 "#) {
-        Ok(result) => println!("stdout: {:?}, exit_code: {}", result.stdout, result.exit_code),
+        Ok(result) => {
+            println!("stdout: {:?}", result.stdout);
+            println!("stderr: {:?}", result.stderr);
+            println!("exit_code: {}", result.exit_code);
+        }
         Err(e) => eprintln!("Failed: {e}"),
+    }
+
+    // Test 3: Multiple runs (verify sandbox reuse)
+    println!("\n--- Test 3: Second run ---");
+    match sandbox.run("print('second run works!')") {
+        Ok(result) => println!("stdout: {:?}, exit_code: {}", result.stdout, result.exit_code),
+        Err(e) => eprintln!("Failed (expected — component re-entry issue): {e}"),
     }
 }

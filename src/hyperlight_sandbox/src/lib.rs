@@ -11,7 +11,7 @@ extern crate alloc;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use hyperlight_wasm::{LoadedWasmSandbox, SandboxBuilder, Snapshot};
@@ -120,16 +120,19 @@ pub struct HostState {
     tools: ToolRegistry,
 }
 
+#[allow(refining_impl_trait)]
 impl bindings::hyperlight::sandbox::PythonSandboxImports for HostState {
     type Tools = HostState;
     fn tools(&mut self) -> &mut Self { self }
 }
 
 impl bindings::hyperlight::sandbox::Tools for HostState {
-    fn dispatch(&mut self, name: String, args_json: String) -> String {
-        let args: serde_json::Value = serde_json::from_str(&args_json)
+    fn dispatch(&mut self, request_json: String) -> String {
+        let request: serde_json::Value = serde_json::from_str(&request_json)
             .unwrap_or(serde_json::Value::Null);
-        match self.tools.dispatch(&name, args) {
+        let name = request["name"].as_str().unwrap_or("");
+        let args = request.get("args").cloned().unwrap_or(serde_json::Value::Null);
+        match self.tools.dispatch(name, args) {
             Ok(v) => serde_json::to_string(&serde_json::json!({"result": v}))
                 .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string()),
             Err(e) => serde_json::to_string(&serde_json::json!({"error": e.to_string()}))
