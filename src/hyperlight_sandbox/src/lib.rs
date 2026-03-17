@@ -14,7 +14,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use hyperlight_wasm::{LoadedWasmSandbox, SandboxBuilder, Snapshot};
+use hyperlight_wasm::{LoadedWasmSandbox, SandboxBuilder};
+pub use hyperlight_wasm::Snapshot;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
