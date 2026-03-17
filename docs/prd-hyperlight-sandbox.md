@@ -1,6 +1,6 @@
 # PRD: `hyperlight_sandbox` — Python SDK for Wasm-Isolated Code Execution
 
-**Status:** Phase 1 Complete
+**Status:** Phase 2 Complete
 **Author:** Dutch (Lead Architect)
 **Requested by:** James Sturtevant
 **Date:** 2026-03-16
@@ -718,10 +718,13 @@ hyperlight-wasm/
 │       ├── sandbox_executor.py    # Guest Python: Executor class with run()
 │       └── hyperlight.py          # Guest-side hyperlight module (call_tool stub)
 │
-├── python/                        # TODO — Pure Python SDK layer
+├── python/                        # Pure Python SDK layer (Phase 2 ✔)
 │   ├── hyperlight_sandbox/
 │   │   ├── __init__.py            # CodeExecutionTool, SandboxEnvironment, ExecutionResult
 │   │   └── py.typed
+│   ├── src/
+│   │   └── lib.rs                 # PyO3 bindings: WasmSandbox pyclass
+│   ├── Cargo.toml
 │   └── pyproject.toml
 │
 └── assets/                        # TODO — Pre-built artifacts
@@ -732,9 +735,9 @@ hyperlight-wasm/
 
 1. **Guest component**: `just guest-build` (componentize-py → `.wasm` → `hyperlight-wasm-aot --component` → `.aot`)
 2. **Rust host crate**: `cargo build -p hyperlight-sandbox`
-3. **Run example**: `just guest-run` (sets `WIT_WORLD` env var automatically)
-4. **PyO3 bindings**: `maturin build` (TODO — Phase 4)
-5. **Python package**: Standard `pip install .` from `python/` directory (TODO — Phase 4)
+3. **Run Rust example**: `just guest-run` (sets `WIT_WORLD` env var automatically)
+4. **PyO3 bindings**: `just python-build` (runs `maturin develop` with `WIT_WORLD`)
+5. **Run Python example**: `just python-run` or `just python-demo`
 
 > **Critical:** `WIT_WORLD` environment variable must point to `python-sandbox-world.wasm` at runtime. Without it, hyperlight-wasm cannot resolve component export function names. The Justfile `guest-run` target sets this automatically.
 
@@ -787,20 +790,31 @@ stderr: ""
 | Create `hyperlight-sandbox` crate | ✔ | `src/hyperlight_sandbox/` with `host_bindgen!` macro |
 | Integration test: hello world | ✔ | `just guest-run` — `examples/hello.rs` |
 
-### Phase 2: Tool Dispatch
+### Phase 2: Tool Dispatch ✔ COMPLETE
 
 **Goal:** Host-registered tools callable from guest code via `call_tool()`.
 
-| Task | Layer | Details |
-|------|-------|---------|
-| Add `tools.dispatch` to WIT | Guest | Import interface for host callbacks |
-| Implement `ToolRegistry` in Rust | Rust | Register handlers, JSON dispatch, middleware hook (~10 lines for future capabilities) |
-| Register `tools.dispatch` as host function | Rust | Bind ToolRegistry to WIT import on ProtoWasmSandbox |
-| Guest-side `hyperlight` module | Guest | `call_tool()` wrapper calling `tools.dispatch()` |
-| PyO3 `register_tool()` | Bindings | Python callable → Rust ToolRegistry |
-| Integration test: tool round-trip | Test | Register tool in Python, call from guest, verify result |
+**Result:** Working end-to-end. `just guest-run` and `just python-run` both pass.
 
-**Exit criteria:** `sandbox.register_tool("add", lambda **kw: kw["a"] + kw["b"])` + guest `call_tool("add", a=1, b=2)` returns `3`.
+**Implementation learnings:**
+- `wasm_guest_bindgen!` macro has a bug with multi-param component imports (`"expected 2-tuple, found 1-tuple"`). Workaround: single-param `dispatch(request-json: string)` — host parses JSON to extract name + args.
+- `host_bindgen!` macro panics on guest errors instead of returning `Result`. Workaround: `catch_unwind` around the macro-generated call. Filed upstream issue.
+- `_call_tool(name, **kwargs)` parameter named `name` conflicts when users pass `name=` as a kwarg. Renamed to `tool_name`.
+- `WIT_WORLD` must be set both at compile time (build.rs) and runtime. The runtime sub-build at `target/hyperlight-wasm-runtime/` caches stale worlds — must clean when switching.
+
+| Task | Status | Details |
+|------|--------|---------|
+| Add `tools.dispatch` to WIT | ✔ | Single-param `dispatch(request-json: string)` — workaround for macro multi-param bug |
+| Implement `ToolRegistry` in Rust | ✔ | `src/hyperlight_sandbox/src/lib.rs` — register, dispatch, middleware hook |
+| Register `tools.dispatch` as host function | ✔ | Via `host_bindgen!` trait impl (`HostState` implements `Tools`) |
+| Guest-side `hyperlight` module | ✔ | `sandbox_executor.py` + `hyperlight.py` — `call_tool()` wrapper |
+| PyO3 `register_tool()` | ✔ | `python/src/lib.rs` — accepts `(name, callable)` or SDK Tool objects |
+| Python SDK: `WasmSandbox`, `CodeExecutionTool` | ✔ | `python/hyperlight_sandbox/__init__.py` |
+| Integration test: tool round-trip | ✔ | `just guest-run`, `just python-run`, `just python-demo` |
+| Snapshot/restore via Python SDK | ✔ | `sandbox.snapshot()` / `sandbox.restore(snap)` working |
+| Graceful error handling for guest crashes | ✔ | `catch_unwind` converts macro panics to `ExecutionResult(exit_code=-1)` |
+
+**Exit criteria met:** `sandbox.register_tool("add", lambda a=0, b=0: a + b)` + guest `call_tool("add", a=1, b=2)` returns `3`. ✔
 
 ### Phase 3: File I/O + Snapshots
 
@@ -811,8 +825,8 @@ stderr: ""
 | WASI filesystem preopens for `/input/`, `/output/` | Rust | Pre-populate /input/ from `inputs` dict, read /output/ after execution |
 | `add_files()` / `add_file()` on sandbox | Rust + Bindings | Pre-load files that persist across runs. `add_files("a.json", "b.csv")` (varargs) reads from local FS; `add_file("name", bytes)` adds from memory |
 | `inputs`/`outputs` params on `run()` | Bindings + SDK | Per-run overrides: `run(code, inputs={"data.json": b"..."}, outputs=["result.json"])` |
-| Expose `snapshot()`/`restore()` | Bindings | Delegate to `LoadedWasmSandbox::snapshot()`/`restore()` |
-| `SandboxEnvironment` dataclass | Python SDK | Configuration object |
+| Expose `snapshot()`/`restore()` | Bindings | ✔ Done in Phase 2 — delegate to `LoadedWasmSandbox::snapshot()`/`restore()` |
+| `SandboxEnvironment` dataclass | Python SDK | ✔ Done in Phase 2 — `python/hyperlight_sandbox/__init__.py` |
 | Integration tests for file I/O and snapshots | Test | Round-trip file data, verify snapshot rollback, verify persistent files |
 
 **Exit criteria:** File I/O round-trips correctly. `add_files()` persists across runs. `snapshot()` → `run()` → `restore()` → `run()` produces independent results.
@@ -837,10 +851,10 @@ stderr: ""
 
 | Task | Layer | Details |
 |------|-------|---------|
-| `CodeExecutionTool` class | Python SDK | Wraps WasmSandbox with environment config and tool list |
-| `ToolRegistry.add_middleware()` | Rust | Pre-dispatch hook for future capabilities enforcement |
-| Documentation and examples | Docs | README, usage examples, API reference |
-| CI pipeline for guest component builds | CI | Automated componentize-py + AOT + packaging |
+| `CodeExecutionTool` class | Python SDK | ✔ Done in Phase 2 — `python/hyperlight_sandbox/__init__.py` |
+| `ToolRegistry.add_middleware()` | Rust | ✔ Done in Phase 2 — hook exists in `lib.rs` |
+| Documentation and examples | Docs | ✔ Partial — `examples/python-sdk/basic.py`, `capabilities_demo.py` |
+| CI pipeline for guest component builds | CI | TODO — Automated componentize-py + AOT + packaging |
 
 **Exit criteria:** `CodeExecutionTool` works end-to-end. Middleware hook exists and can be invoked (no enforcement logic yet).
 
@@ -856,7 +870,7 @@ stderr: ""
 
 3. ~~**AOT format compatibility.**~~ **RESOLVED.** `hyperlight-wasm-aot compile --component` works with componentize-py output. The `--stub-wasi` flag is required for Phase 1 (no WASI host). Without it, loading fails with "incompatible object file format".
 
-4. **Snapshot granularity.** Does `LoadedWasmSandbox::snapshot()` capture full Python interpreter state (heap, globals, etc.) or just Wasm linear memory? Need to verify that Python-level state is fully restored.
+4. ~~**Snapshot granularity.**~~ **RESOLVED.** `LoadedWasmSandbox::snapshot()` captures full Wasm linear memory, which includes the Python interpreter heap and globals. Confirmed by Phase 2 test: `snapshot()` → set `counter=100` → `restore()` → `counter` is undefined (NameError).
 
 5. ~~**Guest module size.**~~ **RESOLVED.** AOT-compiled Python component is ~43MB. Too large for git. Must be CI-built artifact or separate download.
 
