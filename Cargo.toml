@@ -21,3 +21,9 @@ hyperlight-guest-bin = { git = "https://github.com/hyperlight-dev/hyperlight", r
 hyperlight-host = { git = "https://github.com/hyperlight-dev/hyperlight", rev = "c9a1a4cefce6a085af92e375121e9f1b1c8deeec", default-features = false, features = ["executable_heap"] }
 hyperlight-wasm-macro = { version = "0.13.0", path = "src/hyperlight_wasm_macro" }
 hyperlight-wasm-runtime = { version = "0.13.0", path = "src/hyperlight_wasm_runtime" }
+
+[patch."https://github.com/hyperlight-dev/hyperlight"]
+hyperlight-component-util = { path = "src/hyperlight_component_util" }
+
+[patch.crates-io]
+hyperlight-component-util = { path = "src/hyperlight_component_util" }

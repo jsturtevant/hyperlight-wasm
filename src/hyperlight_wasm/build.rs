@@ -139,7 +139,6 @@ fn build_wasm_runtime() -> PathBuf {
         .arg(&target_dir)
         .arg("--manifest-path")
         .arg(&manifest_path)
-        .arg("--locked")
         .env_clear_cargo();
 
     // Add --features gdb if the gdb feature is enabled for this build script

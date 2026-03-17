@@ -44,3 +44,6 @@ trace_guest = ["hyperlight-common/trace_guest", "hyperlight-guest/trace_guest", 
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(hyperlight)'] }
+
+[patch.crates-io]
+hyperlight-component-util = { path = "../hyperlight_component_util" }

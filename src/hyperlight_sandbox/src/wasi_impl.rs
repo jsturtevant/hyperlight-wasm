@@ -25,7 +25,7 @@ use wasi::sockets::udp;
 impl wasi::io::error::Error for HostState {
     type T = u32;
     fn to_debug_string(&mut self, _self_: BorrowedResourceGuard<u32>) -> String {
-        "wasi error (stub)".into()
+        String::from("error")
     }
 }
 
@@ -44,8 +44,8 @@ impl wasi::io::poll::Pollable for HostState {
 }
 
 impl wasi::io::Poll for HostState {
-    fn poll(&mut self, r#in: Vec<BorrowedResourceGuard<u32>>) -> Vec<u32> {
-        (0..r#in.len() as u32).collect()
+    fn poll(&mut self, _in: Vec<BorrowedResourceGuard<u32>>) -> Vec<u32> {
+        (0.._in.len() as u32).collect()
     }
 }
 
@@ -145,7 +145,7 @@ impl streams::OutputStream<u32, u32, u32> for HostState {
         _src: BorrowedResourceGuard<u32>,
         _len: u64,
     ) -> Result<u64, streams::StreamError<u32>> {
-        Ok(0)
+        Err(streams::StreamError::Closed)
     }
     fn blocking_splice(
         &mut self,
@@ -153,7 +153,7 @@ impl streams::OutputStream<u32, u32, u32> for HostState {
         _src: BorrowedResourceGuard<u32>,
         _len: u64,
     ) -> Result<u64, streams::StreamError<u32>> {
-        Ok(0)
+        Err(streams::StreamError::Closed)
     }
 }
 
@@ -319,20 +319,7 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<(), fs_types::ErrorCode> {
-        Ok(())
-    }
-    fn get_flags(
-        &mut self,
-        _self_: BorrowedResourceGuard<u32>,
-    ) -> Result<fs_types::DescriptorFlags, fs_types::ErrorCode> {
-        Ok(fs_types::DescriptorFlags {
-            read: true,
-            write: false,
-            file_integrity_sync: false,
-            data_integrity_sync: false,
-            requested_write_sync: false,
-            mutate_directory: false,
-        })
+        Err(fs_types::ErrorCode::Unsupported)
     }
     fn get_type(
         &mut self,
@@ -361,7 +348,7 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         _length: fs_types::Filesize,
         _offset: fs_types::Filesize,
     ) -> Result<(Vec<u8>, bool), fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
+        Err(fs_types::ErrorCode::NoEntry)
     }
     fn write(
         &mut self,
@@ -375,13 +362,13 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<u32, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
+        Err(fs_types::ErrorCode::NoEntry)
     }
     fn sync(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<(), fs_types::ErrorCode> {
-        Ok(())
+        Err(fs_types::ErrorCode::Unsupported)
     }
     fn create_directory_at(
         &mut self,
@@ -396,50 +383,12 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
     ) -> Result<fs_types::DescriptorStat<wall_clock::Datetime>, fs_types::ErrorCode> {
         Err(fs_types::ErrorCode::Unsupported)
     }
-    fn stat_at(
-        &mut self,
-        _self_: BorrowedResourceGuard<u32>,
-        _path_flags: fs_types::PathFlags,
-        _path: String,
-    ) -> Result<fs_types::DescriptorStat<wall_clock::Datetime>, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::NoEntry)
-    }
-    fn set_times_at(
-        &mut self,
-        _self_: BorrowedResourceGuard<u32>,
-        _path_flags: fs_types::PathFlags,
-        _path: String,
-        _data_access_timestamp: fs_types::NewTimestamp<wall_clock::Datetime>,
-        _data_modification_timestamp: fs_types::NewTimestamp<wall_clock::Datetime>,
-    ) -> Result<(), fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
-    }
-    fn link_at(
-        &mut self,
-        _self_: BorrowedResourceGuard<u32>,
-        _old_path_flags: fs_types::PathFlags,
-        _old_path: String,
-        _new_descriptor: BorrowedResourceGuard<u32>,
-        _new_path: String,
-    ) -> Result<(), fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
-    }
-    fn open_at(
-        &mut self,
-        _self_: BorrowedResourceGuard<u32>,
-        _path_flags: fs_types::PathFlags,
-        _path: String,
-        _open_flags: fs_types::OpenFlags,
-        _flags: fs_types::DescriptorFlags,
-    ) -> Result<u32, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::NoEntry)
-    }
     fn readlink_at(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
         _path: String,
     ) -> Result<String, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
+        Err(fs_types::ErrorCode::NoEntry)
     }
     fn remove_directory_at(
         &mut self,
@@ -483,18 +432,7 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<fs_types::MetadataHashValue, fs_types::ErrorCode> {
-        Ok(fs_types::MetadataHashValue {
-            lower: 0,
-            upper: 0,
-        })
-    }
-    fn metadata_hash_at(
-        &mut self,
-        _self_: BorrowedResourceGuard<u32>,
-        _path_flags: fs_types::PathFlags,
-        _path: String,
-    ) -> Result<fs_types::MetadataHashValue, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::NoEntry)
+        Err(fs_types::ErrorCode::Unsupported)
     }
 }
 
@@ -534,7 +472,7 @@ impl wasi::sockets::InstanceNetwork<u32> for HostState {
 // ---------------------------------------------------------------------------
 
 impl tcp::TcpSocket<
-    u64,
+    monotonic_clock::Duration,
     network::ErrorCode,
     u32,
     network::IpAddressFamily,
@@ -545,7 +483,6 @@ impl tcp::TcpSocket<
 > for HostState
 {
     type T = u32;
-
     fn start_bind(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
@@ -636,26 +573,26 @@ impl tcp::TcpSocket<
     fn keep_alive_idle_time(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
-    ) -> Result<u64, network::ErrorCode> {
+    ) -> Result<monotonic_clock::Duration, network::ErrorCode> {
         Err(network::ErrorCode::NotSupported)
     }
     fn set_keep_alive_idle_time(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
-        _value: u64,
+        _value: monotonic_clock::Duration,
     ) -> Result<(), network::ErrorCode> {
         Err(network::ErrorCode::NotSupported)
     }
     fn keep_alive_interval(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
-    ) -> Result<u64, network::ErrorCode> {
+    ) -> Result<monotonic_clock::Duration, network::ErrorCode> {
         Err(network::ErrorCode::NotSupported)
     }
     fn set_keep_alive_interval(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
-        _value: u64,
+        _value: monotonic_clock::Duration,
     ) -> Result<(), network::ErrorCode> {
         Err(network::ErrorCode::NotSupported)
     }
@@ -724,7 +661,7 @@ impl tcp::TcpSocket<
 }
 
 impl wasi::sockets::Tcp<
-    u64,
+    monotonic_clock::Duration,
     network::ErrorCode,
     u32,
     network::IpAddressFamily,
