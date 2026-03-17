@@ -188,13 +188,49 @@ impl PythonSandbox {
     /// Execute Python `code` in the sandbox.
     pub fn run(&mut self, code: &str) -> Result<ExecutionResult> {
         use bindings::hyperlight::sandbox::Executor;
-        let wit_result = self.sandbox.run(code.to_string());
 
-        Ok(ExecutionResult {
-            stdout: wit_result.stdout,
-            stderr: wit_result.stderr,
-            exit_code: wit_result.exit_code,
-        })
+        // The macro-generated run() panics on guest errors (e.g. GPF from
+        // stubbed WASI calls). Catch the panic and return it as an error
+        // result so callers get a clean ExecutionResult instead of a crash.
+        let code_owned = code.to_string();
+        let sandbox_ptr = &mut self.sandbox as *mut _ as usize;
+
+        // Suppress the default panic hook output while we catch_unwind
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let sandbox = unsafe {
+                &mut *(sandbox_ptr
+                    as *mut bindings::PythonSandboxSandbox<HostState, LoadedWasmSandbox>)
+            };
+            sandbox.run(code_owned)
+        }));
+
+        // Restore the original panic hook
+        std::panic::set_hook(prev_hook);
+
+        match result {
+            Ok(wit_result) => Ok(ExecutionResult {
+                stdout: wit_result.stdout,
+                stderr: wit_result.stderr,
+                exit_code: wit_result.exit_code,
+            }),
+            Err(panic_info) => {
+                let msg = if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "sandbox execution failed".to_string()
+                };
+                Ok(ExecutionResult {
+                    stdout: String::new(),
+                    stderr: msg,
+                    exit_code: -1,
+                })
+            }
+        }
     }
 
     /// Take a snapshot of the current sandbox state.
