@@ -11,6 +11,13 @@ interface executor {
     run: func(code: string) -> execution-result;
 }
 
+interface tools {
+    /// Dispatch a tool call to the host.
+    /// Returns JSON: {"result": ...} or {"error": "..."}.
+    dispatch: func(name: string, args-json: string) -> string;
+}
+
 world python-sandbox {
+    import tools;
     export executor;
 }

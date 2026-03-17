@@ -1,7 +1,7 @@
 """Guest-side executor that runs inside the Wasm component.
 
-Phase 1: Basic code execution with stdout/stderr capture.
-No tools import yet — call_tool raises NotImplementedError.
+Phase 2: Code execution with tool dispatch via WIT tools.dispatch import.
+Guest code can call host tools via call_tool('name', key=val).
 
 componentize-py expects a class `Executor` matching the WIT `executor` interface,
 with a `run` method returning an `ExecutionResult` dataclass.
@@ -9,16 +9,20 @@ with a `run` method returning an `ExecutionResult` dataclass.
 
 import sys
 import io
+import json
 
 from wit_world.exports.executor import ExecutionResult
+import wit_world.imports.tools as tools
 
 
 def _call_tool(name: str, **kwargs):
-    """Stub for Phase 1. Phase 2 will route through WIT tools.dispatch."""
-    raise NotImplementedError(
-        f"call_tool('{name}') is not available in Phase 1. "
-        "Tool dispatch requires Phase 2 WIT (tools.dispatch import)."
-    )
+    """Call a host-registered tool via WIT tools.dispatch."""
+    args_json = json.dumps(kwargs)
+    result_json = tools.dispatch(name, args_json)
+    result = json.loads(result_json)
+    if "error" in result:
+        raise RuntimeError(f"Tool '{name}' failed: {result['error']}")
+    return result.get("result")
 
 
 class Executor:

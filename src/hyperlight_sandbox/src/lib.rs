@@ -11,7 +11,7 @@ extern crate alloc;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use hyperlight_wasm::{LoadedWasmSandbox, SandboxBuilder, Snapshot};
@@ -107,13 +107,36 @@ impl Default for ToolRegistry {
 }
 
 // ---------------------------------------------------------------------------
-// WIT host interface implementation
+// WIT host interface — manual registration for tool dispatch
 // ---------------------------------------------------------------------------
 
-/// Host state — Phase 1 has no imports to implement.
-pub struct HostState {}
+// The host_bindgen! macro generates export bindings (Executor trait) but its
+// import registration uses Vec<u8> params which hyperlight-wasm's
+// register_host_function doesn't support. So we register `dispatch` manually
+// with String params and use the macro only for export calls.
 
-impl bindings::hyperlight::sandbox::PythonSandboxImports for HostState {}
+/// Host state — implements tools.dispatch routing to ToolRegistry.
+pub struct HostState {
+    tools: ToolRegistry,
+}
+
+impl bindings::hyperlight::sandbox::PythonSandboxImports for HostState {
+    type Tools = HostState;
+    fn tools(&mut self) -> &mut Self { self }
+}
+
+impl bindings::hyperlight::sandbox::Tools for HostState {
+    fn dispatch(&mut self, name: String, args_json: String) -> String {
+        let args: serde_json::Value = serde_json::from_str(&args_json)
+            .unwrap_or(serde_json::Value::Null);
+        match self.tools.dispatch(&name, args) {
+            Ok(v) => serde_json::to_string(&serde_json::json!({"result": v}))
+                .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string()),
+            Err(e) => serde_json::to_string(&serde_json::json!({"error": e.to_string()}))
+                .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string()),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // PythonSandbox
@@ -122,14 +145,18 @@ impl bindings::hyperlight::sandbox::PythonSandboxImports for HostState {}
 /// A ready-to-use Python execution sandbox backed by hyperlight-wasm.
 pub struct PythonSandbox {
     sandbox: bindings::PythonSandboxSandbox<HostState, LoadedWasmSandbox>,
-    tools: ToolRegistry,
 }
 
 impl PythonSandbox {
     /// Build a new sandbox from the given configuration.
     pub fn new(config: SandboxConfig) -> Result<Self> {
+        Self::with_tools(config, ToolRegistry::new())
+    }
+
+    /// Build a new sandbox with pre-registered tools.
+    pub fn with_tools(config: SandboxConfig, tools: ToolRegistry) -> Result<Self> {
         let module_path = config.module_path.clone();
-        let state = HostState {};
+        let state = HostState { tools };
 
         let mut proto = SandboxBuilder::new()
             .with_guest_input_buffer_size(70_000_000)
@@ -138,6 +165,7 @@ impl PythonSandbox {
             .build()
             .context("failed to build ProtoWasmSandbox")?;
 
+        // register_host_functions binds tools.dispatch via the macro-generated code
         let rt = bindings::register_host_functions(&mut proto, state);
 
         let wasm_sandbox = proto
@@ -150,7 +178,6 @@ impl PythonSandbox {
 
         Ok(Self {
             sandbox: bindings::PythonSandboxSandbox { sb, rt },
-            tools: ToolRegistry::new(),
         })
     }
 
@@ -180,13 +207,5 @@ impl PythonSandbox {
             .sb
             .restore(snapshot.clone())
             .map_err(|e| anyhow::anyhow!("restore failed: {e}"))
-    }
-
-    pub fn tools(&self) -> &ToolRegistry {
-        &self.tools
-    }
-
-    pub fn tools_mut(&mut self) -> &mut ToolRegistry {
-        &mut self.tools
     }
 }
