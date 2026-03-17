@@ -816,6 +816,22 @@ stderr: ""
 
 **Exit criteria met:** `sandbox.register_tool("add", lambda a=0, b=0: a + b)` + guest `call_tool("add", a=1, b=2)` returns `3`. ✔
 
+### Phase 2.5: Agent Framework Integration Examples ← NEXT
+
+**Goal:** Port the Copilot SDK and Agent Framework examples from hyperlight-unikraft to hyperlight-sandbox, demonstrating real-world agent loop integration.
+
+**Reference implementations:** `hyperlight-unikraft/examples/copilot-sdk/copilot_sdk_tools.py` and `hyperlight-unikraft/examples/agent-framework/copilot_agent.py`.
+
+| Task | Layer | Details |
+|------|-------|---------|
+| Port Copilot SDK example | Python | `examples/copilot-sdk/copilot_sdk_tools.py` — `define_tool`, `CopilotClient` sessions, `execute_code` tool wrapping `WasmSandbox` |
+| Port Agent Framework example | Python | `examples/agent-framework/copilot_agent.py` — `GitHubCopilotAgent` with `execute_code`, `compute`, `fetch_data` tools |
+| SDK Tool object support in `register_tool()` | Python | Verify `sandbox.register_tool(sdk_tool)` works with Copilot SDK `Tool` objects (`.name` + `.handler` attrs) |
+| System prompt patterns | Docs | Document the prompt pattern: steer model to use `execute_code` → `call_tool()` inside sandbox |
+| Just targets for examples | Build | `just copilot-sdk-example`, `just agent-framework-example` |
+
+**Exit criteria:** Both examples run end-to-end with a Copilot session — model calls `execute_code`, guest code calls `call_tool('compute', ...)` and `call_tool('fetch_data', ...)`, results flow back through the agent loop.
+
 ### Phase 3: File I/O + Snapshots
 
 **Goal:** WASI filesystem I/O, persistent file loading, and snapshot/restore.
