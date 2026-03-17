@@ -127,10 +127,10 @@ bench-download os hypervisor cpu tag="":
     tar -zxvf ./src/hyperlight_wasm/target/benchmarks_{{ os }}_{{ hypervisor }}_{{ cpu }}.tar.gz -C ./src/hyperlight_wasm/target/criterion/ --strip-components=1
 
 # GUEST COMPONENT (python-sandbox)
-# Prerequisites: pip install componentize-py
+# Prerequisites: pip install componentize-py (in .venv)
 
 guest-build-wasm:
-    cd src/python_sandbox && componentize-py \
+    cd src/python_sandbox && ../../.venv/bin/componentize-py \
         -d wit/hyperlight-sandbox.wit \
         -w python-sandbox \
         componentize --stub-wasi \
@@ -146,7 +146,7 @@ guest-compile-wit:
     wasm-tools component wit src/python_sandbox/wit/hyperlight-sandbox.wit -w -o src/python_sandbox/wit/python-sandbox-world.wasm
 
 guest-bindings:
-    cd src/python_sandbox && componentize-py -d wit/hyperlight-sandbox.wit -w python-sandbox bindings .
+    cd src/python_sandbox && ../../.venv/bin/componentize-py -d wit/hyperlight-sandbox.wit -w python-sandbox bindings .
 
 guest-build target=default-target features="": (guest-compile-wit) (guest-build-aot target features)
 
