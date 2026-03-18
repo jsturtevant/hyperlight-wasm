@@ -11,7 +11,7 @@ extern crate alloc;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use hyperlight_wasm::{LoadedWasmSandbox, SandboxBuilder};
@@ -27,6 +27,7 @@ mod bindings {
 }
 
 mod wasi_impl;
+mod virtual_fs;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -54,6 +55,7 @@ pub struct ExecutionResult {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: i32,
+    pub outputs: HashMap<String, Vec<u8>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +123,7 @@ impl Default for ToolRegistry {
 /// Host state — implements tools.dispatch routing to ToolRegistry.
 pub struct HostState {
     tools: ToolRegistry,
+    fs: Arc<Mutex<virtual_fs::VirtualFs>>,
 }
 
 #[allow(refining_impl_trait)]
@@ -232,6 +235,7 @@ impl bindings::hyperlight::sandbox::Tools for HostState {
 /// A ready-to-use Python execution sandbox backed by hyperlight-wasm.
 pub struct PythonSandbox {
     sandbox: bindings::RootSandbox<HostState, LoadedWasmSandbox>,
+    fs: Arc<Mutex<virtual_fs::VirtualFs>>,
 }
 
 impl PythonSandbox {
@@ -243,7 +247,8 @@ impl PythonSandbox {
     /// Build a new sandbox with pre-registered tools.
     pub fn with_tools(config: SandboxConfig, tools: ToolRegistry) -> Result<Self> {
         let module_path = config.module_path.clone();
-        let state = HostState { tools };
+        let fs = Arc::new(Mutex::new(virtual_fs::VirtualFs::new()));
+        let state = HostState { tools, fs: fs.clone() };
 
         let mut proto = SandboxBuilder::new()
             .with_guest_input_buffer_size(70_000_000)
@@ -265,6 +270,7 @@ impl PythonSandbox {
 
         Ok(Self {
             sandbox: bindings::RootSandbox { sb, rt },
+            fs,
         })
     }
 
@@ -295,11 +301,15 @@ impl PythonSandbox {
         std::panic::set_hook(prev_hook);
 
         match result {
-            Ok(wit_result) => Ok(ExecutionResult {
-                stdout: wit_result.stdout,
-                stderr: wit_result.stderr,
-                exit_code: wit_result.exit_code,
-            }),
+            Ok(wit_result) => {
+                let outputs = self.fs.lock().unwrap().get_output_files();
+                Ok(ExecutionResult {
+                    stdout: wit_result.stdout,
+                    stderr: wit_result.stderr,
+                    exit_code: wit_result.exit_code,
+                    outputs,
+                })
+            }
             Err(panic_info) => {
                 let msg = if let Some(s) = panic_info.downcast_ref::<String>() {
                     s.clone()
@@ -312,6 +322,7 @@ impl PythonSandbox {
                     stdout: String::new(),
                     stderr: msg,
                     exit_code: -1,
+                    outputs: HashMap::new(),
                 })
             }
         }
@@ -331,5 +342,38 @@ impl PythonSandbox {
             .sb
             .restore(snapshot.clone())
             .map_err(|e| anyhow::anyhow!("restore failed: {e}"))
+    }
+
+    // ----- Filesystem management -----
+
+    /// Add a file to the sandbox's `/input/` directory.
+    pub fn add_file(&mut self, name: &str, data: Vec<u8>) {
+        self.fs.lock().unwrap().add_input_file(name, data);
+    }
+
+    /// Add files from host paths to the sandbox's `/input/` directory.
+    pub fn add_files(&mut self, paths: &[&Path]) -> Result<()> {
+        let mut fs = self.fs.lock().unwrap();
+        for path in paths {
+            let data = std::fs::read(path)
+                .with_context(|| format!("failed to read file: {}", path.display()))?;
+            let name = path
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", path.display()))?
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("non-UTF-8 filename: {}", path.display()))?;
+            fs.add_input_file(name, data);
+        }
+        Ok(())
+    }
+
+    /// Get all files written to `/output/` by the guest.
+    pub fn get_output_files(&self) -> HashMap<String, Vec<u8>> {
+        self.fs.lock().unwrap().get_output_files()
+    }
+
+    /// Clear all input/output files and streams.
+    pub fn clear_files(&mut self) {
+        self.fs.lock().unwrap().clear();
     }
 }

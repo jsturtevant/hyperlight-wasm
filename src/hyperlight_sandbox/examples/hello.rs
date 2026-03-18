@@ -65,4 +65,25 @@ print("All tool tests passed!")
         Ok(result) => println!("stdout: {:?}, exit_code: {}", result.stdout, result.exit_code),
         Err(e) => eprintln!("Failed (expected — component re-entry issue): {e}"),
     }
+
+    // Test 4: File I/O via WASI filesystem
+    println!("\n--- Test 4: File I/O ---");
+    sandbox.add_file("data.json", br#"{"greeting": "hello from file!"}"#.to_vec());
+    match sandbox.run(r#"
+import json
+with open('/input/data.json', 'r') as f:
+    data = json.load(f)
+print(f"Read from file: {data['greeting']}")
+
+with open('/output/result.txt', 'w') as f:
+    f.write('Written from sandbox!')
+print("File I/O test passed!")
+"#) {
+        Ok(result) => {
+            println!("stdout: {:?}", result.stdout);
+            println!("exit_code: {}", result.exit_code);
+            println!("outputs: {:?}", result.outputs);
+        }
+        Err(e) => eprintln!("Failed: {e}"),
+    }
 }

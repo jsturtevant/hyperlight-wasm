@@ -6,6 +6,7 @@
 #![allow(unused_variables)]
 
 use crate::bindings::wasi;
+use crate::virtual_fs;
 use crate::HostState;
 use hyperlight_common::resource::BorrowedResourceGuard;
 
@@ -60,6 +61,12 @@ impl streams::InputStream<u32, u32> for HostState {
         _self_: BorrowedResourceGuard<u32>,
         _len: u64,
     ) -> Result<Vec<u8>, streams::StreamError<u32>> {
+        let stream_id = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.has_stream(stream_id) && !fs.is_write_stream(stream_id) {
+            return fs.stream_read(stream_id, _len)
+                .map_err(|_| streams::StreamError::Closed);
+        }
         Err(streams::StreamError::Closed)
     }
     fn blocking_read(
@@ -67,6 +74,12 @@ impl streams::InputStream<u32, u32> for HostState {
         _self_: BorrowedResourceGuard<u32>,
         _len: u64,
     ) -> Result<Vec<u8>, streams::StreamError<u32>> {
+        let stream_id = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.has_stream(stream_id) && !fs.is_write_stream(stream_id) {
+            return fs.stream_read(stream_id, _len)
+                .map_err(|_| streams::StreamError::Closed);
+        }
         Err(streams::StreamError::Closed)
     }
     fn skip(
@@ -101,6 +114,12 @@ impl streams::OutputStream<u32, u32, u32> for HostState {
         _self_: BorrowedResourceGuard<u32>,
         _contents: Vec<u8>,
     ) -> Result<(), streams::StreamError<u32>> {
+        let stream_id = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.has_stream(stream_id) && fs.is_write_stream(stream_id) {
+            fs.stream_write(stream_id, &_contents);
+            return Ok(());
+        }
         Ok(())
     }
     fn blocking_write_and_flush(
@@ -108,6 +127,12 @@ impl streams::OutputStream<u32, u32, u32> for HostState {
         _self_: BorrowedResourceGuard<u32>,
         _contents: Vec<u8>,
     ) -> Result<(), streams::StreamError<u32>> {
+        let stream_id = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.has_stream(stream_id) && fs.is_write_stream(stream_id) {
+            fs.stream_write(stream_id, &_contents);
+            return Ok(());
+        }
         Ok(())
     }
     fn flush(
@@ -279,6 +304,25 @@ impl fs_types::DirectoryEntryStream for HostState {
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<Option<fs_types::DirectoryEntry>, fs_types::ErrorCode> {
+        let stream_id = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.has_dir_stream(stream_id) {
+            match fs.read_dir_entry(stream_id) {
+                Some(Some((name, is_dir))) => {
+                    let dtype = if is_dir {
+                        fs_types::DescriptorType::Directory
+                    } else {
+                        fs_types::DescriptorType::RegularFile
+                    };
+                    return Ok(Some(fs_types::DirectoryEntry {
+                        r#type: dtype,
+                        r#name: name,
+                    }));
+                }
+                Some(None) => return Ok(None),
+                None => {}
+            }
+        }
         Ok(None)
     }
 }
@@ -291,6 +335,12 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         _self_: BorrowedResourceGuard<u32>,
         _offset: fs_types::Filesize,
     ) -> Result<u32, fs_types::ErrorCode> {
+        let fd = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.is_file(fd) {
+            return fs.create_read_stream(fd, _offset)
+                .ok_or(fs_types::ErrorCode::BadDescriptor);
+        }
         Err(fs_types::ErrorCode::Unsupported)
     }
     fn write_via_stream(
@@ -298,12 +348,24 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         _self_: BorrowedResourceGuard<u32>,
         _offset: fs_types::Filesize,
     ) -> Result<u32, fs_types::ErrorCode> {
+        let fd = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.is_file(fd) {
+            return fs.create_write_stream(fd, _offset)
+                .ok_or(fs_types::ErrorCode::BadDescriptor);
+        }
         Err(fs_types::ErrorCode::Unsupported)
     }
     fn append_via_stream(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<u32, fs_types::ErrorCode> {
+        let fd = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.is_file(fd) {
+            return fs.create_append_stream(fd)
+                .ok_or(fs_types::ErrorCode::BadDescriptor);
+        }
         Err(fs_types::ErrorCode::Unsupported)
     }
     fn advise(
@@ -325,7 +387,15 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<fs_types::DescriptorType, fs_types::ErrorCode> {
-        Ok(fs_types::DescriptorType::Directory)
+        let fd = *_self_;
+        let fs = self.fs.lock().unwrap();
+        if fs.is_directory(fd) {
+            Ok(fs_types::DescriptorType::Directory)
+        } else if fs.is_file(fd) {
+            Ok(fs_types::DescriptorType::RegularFile)
+        } else {
+            Ok(fs_types::DescriptorType::Directory)
+        }
     }
     fn set_size(
         &mut self,
@@ -348,7 +418,13 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         _length: fs_types::Filesize,
         _offset: fs_types::Filesize,
     ) -> Result<(Vec<u8>, bool), fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::NoEntry)
+        let fd = *_self_;
+        let fs = self.fs.lock().unwrap();
+        if fs.is_file(fd) {
+            return fs.read_file(fd, _offset, _length)
+                .ok_or(fs_types::ErrorCode::BadDescriptor);
+        }
+        Err(fs_types::ErrorCode::BadDescriptor)
     }
     fn write(
         &mut self,
@@ -356,13 +432,25 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         _buffer: Vec<u8>,
         _offset: fs_types::Filesize,
     ) -> Result<fs_types::Filesize, fs_types::ErrorCode> {
+        let fd = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.is_file(fd) {
+            return fs.write_file(fd, _offset, &_buffer)
+                .ok_or(fs_types::ErrorCode::BadDescriptor);
+        }
         Err(fs_types::ErrorCode::Unsupported)
     }
     fn read_directory(
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<u32, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::NoEntry)
+        let fd = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        if fs.is_directory(fd) {
+            return fs.create_dir_stream(fd)
+                .ok_or(fs_types::ErrorCode::BadDescriptor);
+        }
+        Err(fs_types::ErrorCode::BadDescriptor)
     }
     fn sync(
         &mut self,
@@ -381,7 +469,29 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<fs_types::DescriptorStat<wall_clock::Datetime>, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
+        let fd = *_self_;
+        let fs = self.fs.lock().unwrap();
+        if fs.is_directory(fd) {
+            return Ok(fs_types::DescriptorStat {
+                r#type: fs_types::DescriptorType::Directory,
+                r#link_count: 1,
+                r#size: 0,
+                r#data_access_timestamp: None,
+                r#data_modification_timestamp: None,
+                r#status_change_timestamp: None,
+            });
+        }
+        if let Some(size) = fs.file_size(fd) {
+            return Ok(fs_types::DescriptorStat {
+                r#type: fs_types::DescriptorType::RegularFile,
+                r#link_count: 1,
+                r#size: size,
+                r#data_access_timestamp: None,
+                r#data_modification_timestamp: None,
+                r#status_change_timestamp: None,
+            });
+        }
+        Err(fs_types::ErrorCode::BadDescriptor)
     }
     fn readlink_at(
         &mut self,
@@ -438,7 +548,31 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         &mut self,
         _self_: BorrowedResourceGuard<u32>,
     ) -> Result<fs_types::DescriptorFlags, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
+        let fd = *_self_;
+        let fs = self.fs.lock().unwrap();
+        if fs.is_directory(fd) {
+            let writable = fs.is_output_dir(fd);
+            return Ok(fs_types::DescriptorFlags {
+                r#read: true,
+                r#write: writable,
+                r#file_integrity_sync: false,
+                r#data_integrity_sync: false,
+                r#requested_write_sync: false,
+                r#mutate_directory: writable,
+            });
+        }
+        if fs.is_file(fd) {
+            let writable = fs.is_output_file(fd);
+            return Ok(fs_types::DescriptorFlags {
+                r#read: true,
+                r#write: writable,
+                r#file_integrity_sync: false,
+                r#data_integrity_sync: false,
+                r#requested_write_sync: false,
+                r#mutate_directory: false,
+            });
+        }
+        Err(fs_types::ErrorCode::BadDescriptor)
     }
     fn stat_at(
         &mut self,
@@ -446,7 +580,20 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         _path_flags: fs_types::PathFlags,
         _path: String,
     ) -> Result<fs_types::DescriptorStat<wall_clock::Datetime>, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
+        let dir_fd = *_self_;
+        let fs = self.fs.lock().unwrap();
+        if let Some(file_fd) = fs.find_file_in_dir(dir_fd, &_path) {
+            let size = fs.file_size(file_fd).unwrap_or(0);
+            return Ok(fs_types::DescriptorStat {
+                r#type: fs_types::DescriptorType::RegularFile,
+                r#link_count: 1,
+                r#size: size,
+                r#data_access_timestamp: None,
+                r#data_modification_timestamp: None,
+                r#status_change_timestamp: None,
+            });
+        }
+        Err(fs_types::ErrorCode::NoEntry)
     }
     fn set_times_at(
         &mut self,
@@ -476,7 +623,12 @@ impl fs_types::Descriptor<wall_clock::Datetime, u32, u32, u32> for HostState {
         _open_flags: fs_types::OpenFlags,
         _flags: fs_types::DescriptorFlags,
     ) -> Result<u32, fs_types::ErrorCode> {
-        Err(fs_types::ErrorCode::Unsupported)
+        let dir_fd = *_self_;
+        let mut fs = self.fs.lock().unwrap();
+        let create = _open_flags.r#create;
+        let truncate = _open_flags.r#truncate;
+        fs.open_at(dir_fd, &_path, create, truncate)
+            .ok_or(fs_types::ErrorCode::NoEntry)
     }
     fn metadata_hash_at(
         &mut self,
@@ -499,7 +651,10 @@ impl wasi::filesystem::Types<wall_clock::Datetime, u32, u32, u32> for HostState 
 
 impl wasi::filesystem::Preopens<u32> for HostState {
     fn get_directories(&mut self) -> Vec<(u32, String)> {
-        Vec::new()
+        vec![
+            (virtual_fs::INPUT_DIR_FD, "/input".to_string()),
+            (virtual_fs::OUTPUT_DIR_FD, "/output".to_string()),
+        ]
     }
 }
 
