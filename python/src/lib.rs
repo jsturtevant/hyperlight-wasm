@@ -31,6 +31,7 @@ fn parse_size(s: &str) -> PyResult<u64> {
 pub struct WasmSandbox {
     inner: Option<PythonSandbox>,
     tools: HashMap<String, Py<PyAny>>,
+    pending_files: Vec<(String, Vec<u8>)>,
     module_path: String,
     heap_size: u64,
     stack_size: u64,
@@ -50,6 +51,7 @@ impl WasmSandbox {
         Ok(WasmSandbox {
             inner: None,
             tools: HashMap::new(),
+            pending_files: Vec::new(),
             module_path: module_path.to_string(),
             heap_size: parse_size(heap_size)?,
             stack_size: parse_size(stack_size)?,
@@ -100,11 +102,43 @@ impl WasmSandbox {
         let result = sandbox
             .run(code)
             .map_err(|e| PyRuntimeError::new_err(format!("Execution failed: {e}")))?;
+        let outputs = PyDict::new(py);
+        for (name, data) in &result.outputs {
+            outputs.set_item(name, pyo3::types::PyBytes::new(py, data))?;
+        }
         Ok(PyExecutionResult {
             stdout: result.stdout,
             stderr: result.stderr,
             exit_code: result.exit_code,
+            outputs: outputs.unbind(),
         })
+    }
+
+    fn add_file(&mut self, name: &str, data: &[u8]) -> PyResult<()> {
+        if let Some(sandbox) = self.inner.as_mut() {
+            sandbox.add_file(name, data.to_vec());
+        } else {
+            self.pending_files.push((name.to_string(), data.to_vec()));
+        }
+        Ok(())
+    }
+
+    #[pyo3(signature = (*paths))]
+    fn add_files(&mut self, paths: Vec<String>) -> PyResult<()> {
+        for path in &paths {
+            let p = std::path::Path::new(path);
+            let name = p.file_name()
+                .ok_or_else(|| PyRuntimeError::new_err(format!("Invalid path: {path}")))?;
+            let data = std::fs::read(p)
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to read {path}: {e}")))?;
+            let name = name.to_string_lossy().to_string();
+            if let Some(sandbox) = self.inner.as_mut() {
+                sandbox.add_file(&name, data);
+            } else {
+                self.pending_files.push((name, data));
+            }
+        }
+        Ok(())
     }
 
     fn snapshot(&mut self) -> PyResult<PySnapshot> {
@@ -151,8 +185,13 @@ impl WasmSandbox {
             stack_size: self.stack_size,
             timeout_secs: self.timeout_secs,
         };
-        let sandbox = PythonSandbox::with_tools(config, registry)
+        let mut sandbox = PythonSandbox::with_tools(config, registry)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create sandbox: {e}")))?;
+        // Load any files queued before sandbox init
+        let pending = std::mem::take(&mut self.pending_files);
+        for (name, data) in pending {
+            sandbox.add_file(&name, data);
+        }
         self.inner = Some(sandbox);
         Ok(())
     }
@@ -273,7 +312,6 @@ fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
 }
 
 #[pyclass]
-#[derive(Clone)]
 pub struct PyExecutionResult {
     #[pyo3(get)]
     pub stdout: String,
@@ -281,6 +319,8 @@ pub struct PyExecutionResult {
     pub stderr: String,
     #[pyo3(get)]
     pub exit_code: i32,
+    #[pyo3(get)]
+    pub outputs: Py<PyDict>,
 }
 
 #[pymethods]

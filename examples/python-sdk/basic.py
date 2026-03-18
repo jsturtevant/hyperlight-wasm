@@ -69,4 +69,22 @@ except NameError:
 """, "post-restore run")
 print(f"After restore: {result2.stdout!r}")
 
+# Test 5: File I/O via WASI filesystem
+print("\n--- Test 5: File I/O ---")
+sandbox.add_file("data.json", b'{"greeting": "hello from file!"}')
+result = timed_run(sandbox, """
+import json
+with open('/input/data.json', 'r') as f:
+    data = json.load(f)
+print(f"Read: {data['greeting']}")
+
+with open('/output/result.txt', 'w') as f:
+    f.write('Written from Python SDK!')
+print("File I/O works!")
+""", "file I/O")
+print(f"stdout: {result.stdout!r}")
+print(f"outputs: {dict((k, v.decode()) for k, v in result.outputs.items())}")
+assert result.success
+assert result.outputs["result.txt"] == b"Written from Python SDK!"
+
 print("\n✅ All tests passed!")
