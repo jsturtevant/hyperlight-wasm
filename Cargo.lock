@@ -1579,6 +1579,7 @@ dependencies = [
  "hyperlight-component-macro",
  "hyperlight-host",
  "hyperlight-wasm",
+ "reqwest",
  "serde",
  "serde_json",
 ]

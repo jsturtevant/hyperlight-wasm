@@ -16,3 +16,9 @@ pyo3 = { version = "0.28", features = ["extension-module"] }
 hyperlight-sandbox = { path = "../src/hyperlight_sandbox" }
 serde_json = "1"
 anyhow = "1"
+
+[patch."https://github.com/hyperlight-dev/hyperlight"]
+hyperlight-component-util = { path = "../src/hyperlight_component_util" }
+
+[patch.crates-io]
+hyperlight-component-util = { path = "../src/hyperlight_component_util" }

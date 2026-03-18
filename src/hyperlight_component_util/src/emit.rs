@@ -15,14 +15,44 @@ limitations under the License.
  */
 
 //! A bunch of utilities used by the actual code emit functions
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::vec::Vec;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::Ident;
 
-use crate::etypes::{BoundedTyvar, Defined, Handleable, ImportExport, TypeBound, Tyvar};
+use crate::etypes::{BoundedTyvar, Defined, ExternDecl, ExternDesc, Handleable, ImportExport, TypeBound, Tyvar};
+
+/// Scan a list of import extern decls for interface name collisions.
+/// Returns the set of interface names that appear more than once.
+pub fn find_colliding_import_names(imports: &[ExternDecl]) -> HashSet<String> {
+    let mut counts = std::collections::HashMap::<String, usize>::new();
+    for ed in imports {
+        if let ExternDesc::Instance(_) = &ed.desc {
+            let wn = split_wit_name(ed.kebab_name);
+            *counts.entry(wn.name.to_string()).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .filter(|(_, c)| *c > 1)
+        .map(|(n, _)| n)
+        .collect()
+}
+
+/// Get the disambiguated type and getter names for an import instance.
+/// If the interface name collides with another import, prepend the parent
+/// namespace (e.g. "types" from "wasi:http" becomes "HttpTypes"/"http_types").
+pub fn import_member_names(wn: &WitName, collisions: &HashSet<String>) -> (Ident, Ident) {
+    if collisions.contains(wn.name) {
+        let parent = wn.namespaces.last().copied().unwrap_or(wn.name);
+        let qualified = format!("{}-{}", parent, wn.name);
+        (kebab_to_type(&qualified), kebab_to_getter(&qualified))
+    } else {
+        (kebab_to_type(wn.name), kebab_to_getter(wn.name))
+    }
+}
 
 /// A representation of a trait definition that we will eventually
 /// emit. This is used to allow easily adding onto the trait each time
@@ -284,6 +314,11 @@ pub struct State<'a, 'b> {
     pub is_wasmtime_guest: bool,
     /// Are we working on an export or an import of the component type?
     pub is_export: bool,
+    /// Set of interface names that collide across different packages
+    /// (e.g. "types" appears in both wasi:filesystem/types and wasi:http/types).
+    /// When a name is in this set, the parent namespace is prepended to
+    /// disambiguate the trait member name.
+    pub colliding_import_names: HashSet<String>,
 }
 
 /// Create a State with all of its &mut references pointing to
@@ -336,6 +371,7 @@ impl<'a, 'b> State<'a, 'b> {
             is_guest,
             is_wasmtime_guest,
             is_export: false,
+            colliding_import_names: HashSet::new(),
         }
     }
     pub fn clone<'c>(&'c mut self) -> State<'c, 'b> {
@@ -357,6 +393,7 @@ impl<'a, 'b> State<'a, 'b> {
             is_guest: self.is_guest,
             is_wasmtime_guest: self.is_wasmtime_guest,
             is_export: self.is_export,
+            colliding_import_names: self.colliding_import_names.clone(),
         }
     }
     /// Obtain a reference to the [`Mod`] that we are currently
@@ -437,10 +474,12 @@ impl<'a, 'b> State<'a, 'b> {
     /// variable, given its absolute index (i.e. ignoring
     /// [`State::var_offset`])
     pub fn noff_var_id(&self, n: u32) -> Ident {
-        let Some(n) = self.bound_vars[n as usize].origin.last_name() else {
+        let Some(name) = self.bound_vars[n as usize].origin.last_name() else {
             panic!("missing origin on tyvar in rust emit")
         };
-        kebab_to_type(n)
+        let wn = split_wit_name(name);
+        let (tn, _) = import_member_names(&wn, &self.colliding_import_names);
+        tn
     }
     /// Copy the state, changing it to emit into the helper module of
     /// the current trait

@@ -9,7 +9,7 @@
 
 extern crate alloc;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -124,6 +124,7 @@ impl Default for ToolRegistry {
 pub struct HostState {
     tools: ToolRegistry,
     fs: Arc<Mutex<virtual_fs::VirtualFs>>,
+    allowed_domains: Arc<Mutex<HashSet<String>>>,
 }
 
 #[allow(refining_impl_trait)]
@@ -176,8 +177,14 @@ impl bindings::root::component::RootImports for HostState {
     type WallClock = HostState;
     fn wall_clock(&mut self) -> &mut Self { self }
 
-    type Types = HostState;
-    fn types(&mut self) -> &mut Self { self }
+    type FilesystemTypes = HostState;
+    fn filesystem_types(&mut self) -> &mut Self { self }
+
+    type HttpTypes = HostState;
+    fn http_types(&mut self) -> &mut Self { self }
+
+    type OutgoingHandler = HostState;
+    fn outgoing_handler(&mut self) -> &mut Self { self }
 
     type Preopens = HostState;
     fn preopens(&mut self) -> &mut Self { self }
@@ -236,6 +243,7 @@ impl bindings::hyperlight::sandbox::Tools for HostState {
 pub struct PythonSandbox {
     sandbox: bindings::RootSandbox<HostState, LoadedWasmSandbox>,
     fs: Arc<Mutex<virtual_fs::VirtualFs>>,
+    allowed_domains: Arc<Mutex<HashSet<String>>>,
 }
 
 impl PythonSandbox {
@@ -248,7 +256,8 @@ impl PythonSandbox {
     pub fn with_tools(config: SandboxConfig, tools: ToolRegistry) -> Result<Self> {
         let module_path = config.module_path.clone();
         let fs = Arc::new(Mutex::new(virtual_fs::VirtualFs::new()));
-        let state = HostState { tools, fs: fs.clone() };
+        let allowed_domains = Arc::new(Mutex::new(HashSet::new()));
+        let state = HostState { tools, fs: fs.clone(), allowed_domains: allowed_domains.clone() };
 
         let mut proto = SandboxBuilder::new()
             .with_guest_input_buffer_size(70_000_000)
@@ -271,6 +280,7 @@ impl PythonSandbox {
         Ok(Self {
             sandbox: bindings::RootSandbox { sb, rt },
             fs,
+            allowed_domains,
         })
     }
 
@@ -375,5 +385,18 @@ impl PythonSandbox {
     /// Clear all input/output files and streams.
     pub fn clear_files(&mut self) {
         self.fs.lock().unwrap().clear();
+    }
+
+    // ----- Network management -----
+
+    /// Allow outbound HTTP requests to the given domain.
+    /// No network access is allowed by default — every domain must be explicitly added.
+    pub fn add_network(&mut self, domain: &str) {
+        self.allowed_domains.lock().unwrap().insert(domain.to_string());
+    }
+
+    /// Check whether a domain is in the allowlist.
+    pub fn is_domain_allowed(&self, domain: &str) -> bool {
+        self.allowed_domains.lock().unwrap().contains(domain)
     }
 }

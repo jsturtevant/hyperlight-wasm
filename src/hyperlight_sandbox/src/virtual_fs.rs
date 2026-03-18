@@ -315,6 +315,34 @@ impl VirtualFs {
         self.streams.get(&id).map_or(false, |s| s.is_write)
     }
 
+    // ----- HTTP body stream helpers -----
+
+    /// Create a read stream backed by in-memory data (for HTTP response bodies).
+    pub fn create_http_read_stream(&mut self, data: &[u8]) -> u32 {
+        let fd = self.alloc_fd();
+        self.entries.insert(fd, FsEntry::File {
+            name: format!("__http_body_{}", fd),
+            dir_fd: INPUT_DIR_FD,
+            data: data.to_vec(),
+        });
+        let stream_id = self.alloc_stream_id();
+        self.streams.insert(stream_id, StreamState { file_fd: fd, offset: 0, is_write: false });
+        stream_id
+    }
+
+    /// Create a write stream for an HTTP outgoing body.
+    pub fn create_http_write_stream(&mut self, _body_handle: u32) -> u32 {
+        let fd = self.alloc_fd();
+        self.entries.insert(fd, FsEntry::File {
+            name: format!("__http_outbody_{}", fd),
+            dir_fd: OUTPUT_DIR_FD,
+            data: Vec::new(),
+        });
+        let stream_id = self.alloc_stream_id();
+        self.streams.insert(stream_id, StreamState { file_fd: fd, offset: 0, is_write: true });
+        stream_id
+    }
+
     // ----- Directory listing -----
 
     /// Create a directory listing stream.

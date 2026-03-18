@@ -1121,3 +1121,525 @@ impl wasi::random::InsecureSeed for HostState {
         (0, 0)
     }
 }
+
+// ---------------------------------------------------------------------------
+// HTTP: Types + OutgoingHandler (Phase 3.5 — WASI-HTTP networking)
+// ---------------------------------------------------------------------------
+
+use std::collections::HashMap;
+use wasi::http::types as http_types;
+
+/// Stored outgoing request state.
+struct HttpRequest {
+    method: String,
+    scheme: String,
+    authority: Option<String>,
+    path_with_query: Option<String>,
+    headers_handle: u32,
+    body_handle: Option<u32>,
+}
+
+/// In-memory store for HTTP resources (fields, requests, responses, bodies).
+/// All keyed by `u32` handles, matching the resource handle pattern used
+/// throughout this file.
+struct HttpStore {
+    next_handle: u32,
+    fields: HashMap<u32, Vec<(String, Vec<u8>)>>,
+    requests: HashMap<u32, HttpRequest>,
+    /// Incoming response state: (status_code, headers_handle, body bytes)
+    responses: HashMap<u32, (u16, u32, Vec<u8>)>,
+    /// Outgoing body buffers
+    outgoing_bodies: HashMap<u32, Vec<u8>>,
+    /// Incoming body read cursors
+    incoming_body_cursors: HashMap<u32, usize>,
+    /// Future responses: handle → Option<Result<response_handle, String>>
+    future_responses: HashMap<u32, Option<Result<u32, String>>>,
+    /// Request options
+    request_options: HashMap<u32, (Option<u64>, Option<u64>, Option<u64>)>,
+}
+
+impl HttpStore {
+    fn new() -> Self {
+        Self {
+            next_handle: 5000, // start high to avoid collision with FS handles
+            fields: HashMap::new(),
+            requests: HashMap::new(),
+            responses: HashMap::new(),
+            outgoing_bodies: HashMap::new(),
+            incoming_body_cursors: HashMap::new(),
+            future_responses: HashMap::new(),
+            request_options: HashMap::new(),
+        }
+    }
+    fn alloc(&mut self) -> u32 {
+        let h = self.next_handle;
+        self.next_handle += 1;
+        h
+    }
+}
+
+use std::sync::OnceLock;
+use std::sync::Mutex as StdMutex;
+
+fn http_store() -> &'static StdMutex<HttpStore> {
+    static STORE: OnceLock<StdMutex<HttpStore>> = OnceLock::new();
+    STORE.get_or_init(|| StdMutex::new(HttpStore::new()))
+}
+
+// -- Fields (headers/trailers) resource --
+
+impl http_types::Fields<u32> for HostState {
+    type T = u32;
+
+    fn new(&mut self) -> u32 {
+        let mut store = http_store().lock().unwrap();
+        let h = store.alloc();
+        store.fields.insert(h, Vec::new());
+        h
+    }
+    fn from_list(
+        &mut self,
+        entries: Vec<(String, Vec<u8>)>,
+    ) -> Result<u32, u32> {
+        let mut store = http_store().lock().unwrap();
+        let h = store.alloc();
+        store.fields.insert(h, entries);
+        Ok(h)
+    }
+    fn get(&mut self, self_: BorrowedResourceGuard<u32>, name: String) -> Vec<Vec<u8>> {
+        let store = http_store().lock().unwrap();
+        store.fields.get(&*self_)
+            .map(|f| f.iter().filter(|(k, _)| k == &name).map(|(_, v)| v.clone()).collect())
+            .unwrap_or_default()
+    }
+    fn has(&mut self, self_: BorrowedResourceGuard<u32>, name: String) -> bool {
+        let store = http_store().lock().unwrap();
+        store.fields.get(&*self_)
+            .map(|f| f.iter().any(|(k, _)| k == &name))
+            .unwrap_or(false)
+    }
+    fn set(
+        &mut self,
+        self_: BorrowedResourceGuard<u32>,
+        name: String,
+        value: Vec<Vec<u8>>,
+    ) -> Result<(), u32> {
+        let mut store = http_store().lock().unwrap();
+        if let Some(f) = store.fields.get_mut(&*self_) {
+            f.retain(|(k, _)| k != &name);
+            for v in value {
+                f.push((name.clone(), v));
+            }
+        }
+        Ok(())
+    }
+    fn delete(&mut self, self_: BorrowedResourceGuard<u32>, name: String) -> Result<(), u32> {
+        let mut store = http_store().lock().unwrap();
+        if let Some(f) = store.fields.get_mut(&*self_) {
+            f.retain(|(k, _)| k != &name);
+        }
+        Ok(())
+    }
+    fn append(
+        &mut self,
+        self_: BorrowedResourceGuard<u32>,
+        name: String,
+        value: Vec<u8>,
+    ) -> Result<(), u32> {
+        let mut store = http_store().lock().unwrap();
+        if let Some(f) = store.fields.get_mut(&*self_) {
+            f.push((name, value));
+        }
+        Ok(())
+    }
+    fn entries(&mut self, self_: BorrowedResourceGuard<u32>) -> Vec<(String, Vec<u8>)> {
+        let store = http_store().lock().unwrap();
+        store.fields.get(&*self_).cloned().unwrap_or_default()
+    }
+    fn clone(&mut self, self_: BorrowedResourceGuard<u32>) -> u32 {
+        let mut store = http_store().lock().unwrap();
+        let entries = store.fields.get(&*self_).cloned().unwrap_or_default();
+        let h = store.alloc();
+        store.fields.insert(h, entries);
+        h
+    }
+}
+
+// -- IncomingRequest (stub — we don't serve incoming HTTP) --
+
+impl http_types::IncomingRequest<u32, u32> for HostState {
+    type T = u32;
+    fn method(&mut self, _self_: BorrowedResourceGuard<u32>) -> http_types::Method {
+        http_types::Method::Get
+    }
+    fn path_with_query(&mut self, _self_: BorrowedResourceGuard<u32>) -> Option<String> {
+        None
+    }
+    fn scheme(&mut self, _self_: BorrowedResourceGuard<u32>) -> Option<http_types::Scheme> {
+        None
+    }
+    fn authority(&mut self, _self_: BorrowedResourceGuard<u32>) -> Option<String> {
+        None
+    }
+    fn headers(&mut self, _self_: BorrowedResourceGuard<u32>) -> u32 {
+        0
+    }
+    fn consume(&mut self, _self_: BorrowedResourceGuard<u32>) -> Result<u32, ()> {
+        Err(())
+    }
+}
+
+// -- OutgoingRequest --
+
+impl http_types::OutgoingRequest<u32, u32> for HostState {
+    type T = u32;
+    fn new(&mut self, headers: u32) -> u32 {
+        let mut store = http_store().lock().unwrap();
+        let h = store.alloc();
+        store.requests.insert(h, HttpRequest {
+            method: "GET".into(),
+            scheme: "https".into(),
+            authority: None,
+            path_with_query: None,
+            headers_handle: headers,
+            body_handle: None,
+        });
+        h
+    }
+    fn body(&mut self, self_: BorrowedResourceGuard<u32>) -> Result<u32, ()> {
+        let mut store = http_store().lock().unwrap();
+        let body_h = store.alloc();
+        store.outgoing_bodies.insert(body_h, Vec::new());
+        if let Some(req) = store.requests.get_mut(&*self_) {
+            req.body_handle = Some(body_h);
+        }
+        Ok(body_h)
+    }
+    fn method(&mut self, self_: BorrowedResourceGuard<u32>) -> http_types::Method {
+        let store = http_store().lock().unwrap();
+        let m = store.requests.get(&*self_).map(|r| r.method.as_str()).unwrap_or("GET");
+        match m {
+            "GET" => http_types::Method::Get,
+            "POST" => http_types::Method::Post,
+            "PUT" => http_types::Method::Put,
+            "DELETE" => http_types::Method::Delete,
+            "HEAD" => http_types::Method::Head,
+            "OPTIONS" => http_types::Method::Options,
+            "PATCH" => http_types::Method::Patch,
+            other => http_types::Method::Other(other.to_string()),
+        }
+    }
+    fn set_method(&mut self, self_: BorrowedResourceGuard<u32>, method: http_types::Method) -> Result<(), ()> {
+        let s = match &method {
+            http_types::Method::Get => "GET",
+            http_types::Method::Post => "POST",
+            http_types::Method::Put => "PUT",
+            http_types::Method::Delete => "DELETE",
+            http_types::Method::Head => "HEAD",
+            http_types::Method::Options => "OPTIONS",
+            http_types::Method::Patch => "PATCH",
+            http_types::Method::Connect => "CONNECT",
+            http_types::Method::Trace => "TRACE",
+            http_types::Method::Other(m) => m.as_str(),
+        };
+        let mut store = http_store().lock().unwrap();
+        if let Some(req) = store.requests.get_mut(&*self_) { req.method = s.to_string(); }
+        Ok(())
+    }
+    fn path_with_query(&mut self, self_: BorrowedResourceGuard<u32>) -> Option<String> {
+        http_store().lock().unwrap().requests.get(&*self_).and_then(|r| r.path_with_query.clone())
+    }
+    fn set_path_with_query(&mut self, self_: BorrowedResourceGuard<u32>, path: Option<String>) -> Result<(), ()> {
+        let mut store = http_store().lock().unwrap();
+        if let Some(req) = store.requests.get_mut(&*self_) { req.path_with_query = path; }
+        Ok(())
+    }
+    fn scheme(&mut self, self_: BorrowedResourceGuard<u32>) -> Option<http_types::Scheme> {
+        let store = http_store().lock().unwrap();
+        store.requests.get(&*self_).map(|r| match r.scheme.as_str() {
+            "http" => http_types::Scheme::HTTP,
+            "https" => http_types::Scheme::HTTPS,
+            s => http_types::Scheme::Other(s.to_string()),
+        })
+    }
+    fn set_scheme(&mut self, self_: BorrowedResourceGuard<u32>, scheme: Option<http_types::Scheme>) -> Result<(), ()> {
+        let s = match &scheme {
+            Some(http_types::Scheme::HTTP) => "http",
+            Some(http_types::Scheme::HTTPS) | None => "https",
+            Some(http_types::Scheme::Other(s)) => s.as_str(),
+        };
+        let mut store = http_store().lock().unwrap();
+        if let Some(req) = store.requests.get_mut(&*self_) { req.scheme = s.to_string(); }
+        Ok(())
+    }
+    fn authority(&mut self, self_: BorrowedResourceGuard<u32>) -> Option<String> {
+        http_store().lock().unwrap().requests.get(&*self_).and_then(|r| r.authority.clone())
+    }
+    fn set_authority(&mut self, self_: BorrowedResourceGuard<u32>, authority: Option<String>) -> Result<(), ()> {
+        let mut store = http_store().lock().unwrap();
+        if let Some(req) = store.requests.get_mut(&*self_) { req.authority = authority; }
+        Ok(())
+    }
+}
+
+// -- RequestOptions --
+
+impl http_types::RequestOptions for HostState {
+    type T = u32;
+    fn new(&mut self) -> u32 {
+        let mut store = http_store().lock().unwrap();
+        let h = store.alloc();
+        store.request_options.insert(h, (None, None, None));
+        h
+    }
+    fn connect_timeout(&mut self, self_: BorrowedResourceGuard<u32>) -> Option<u64> {
+        http_store().lock().unwrap().request_options.get(&*self_).and_then(|o| o.0)
+    }
+    fn set_connect_timeout(&mut self, self_: BorrowedResourceGuard<u32>, duration: Option<u64>) -> Result<(), ()> {
+        if let Some(o) = http_store().lock().unwrap().request_options.get_mut(&*self_) { o.0 = duration; }
+        Ok(())
+    }
+    fn first_byte_timeout(&mut self, self_: BorrowedResourceGuard<u32>) -> Option<u64> {
+        http_store().lock().unwrap().request_options.get(&*self_).and_then(|o| o.1)
+    }
+    fn set_first_byte_timeout(&mut self, self_: BorrowedResourceGuard<u32>, duration: Option<u64>) -> Result<(), ()> {
+        if let Some(o) = http_store().lock().unwrap().request_options.get_mut(&*self_) { o.1 = duration; }
+        Ok(())
+    }
+    fn between_bytes_timeout(&mut self, self_: BorrowedResourceGuard<u32>) -> Option<u64> {
+        http_store().lock().unwrap().request_options.get(&*self_).and_then(|o| o.2)
+    }
+    fn set_between_bytes_timeout(&mut self, self_: BorrowedResourceGuard<u32>, duration: Option<u64>) -> Result<(), ()> {
+        if let Some(o) = http_store().lock().unwrap().request_options.get_mut(&*self_) { o.2 = duration; }
+        Ok(())
+    }
+}
+
+// -- ResponseOutparam (stub — not needed for outgoing requests) --
+
+impl http_types::ResponseOutparam<u32> for HostState {
+    type T = u32;
+    fn set(
+        &mut self,
+        _param: u32,
+        _response: Result<u32, http_types::ErrorCode>,
+    ) {}
+}
+
+// -- IncomingResponse --
+
+impl http_types::IncomingResponse<u32, u32> for HostState {
+    type T = u32;
+    fn status(&mut self, self_: BorrowedResourceGuard<u32>) -> u16 {
+        let store = http_store().lock().unwrap();
+        store.responses.get(&*self_).map(|r| r.0).unwrap_or(0)
+    }
+    fn headers(&mut self, self_: BorrowedResourceGuard<u32>) -> u32 {
+        let store = http_store().lock().unwrap();
+        store.responses.get(&*self_).map(|r| r.1).unwrap_or(0)
+    }
+    fn consume(&mut self, self_: BorrowedResourceGuard<u32>) -> Result<u32, ()> {
+        // Return a body handle that contains the response bytes as a readable stream
+        let mut store = http_store().lock().unwrap();
+        let resp_handle = *self_;
+        let body_data = store.responses.get(&resp_handle).map(|r| r.2.clone()).unwrap_or_default();
+        let body_h = store.alloc();
+        // Store the body data as an "incoming body" keyed by body_h
+        // We'll use the outgoing_bodies map for storage (reusing the buffer map)
+        store.outgoing_bodies.insert(body_h, body_data);
+        store.incoming_body_cursors.insert(body_h, 0);
+        Ok(body_h)
+    }
+}
+
+// -- IncomingBody --
+
+impl http_types::IncomingBody<u32, u32> for HostState {
+    type T = u32;
+    fn stream(&mut self, self_: BorrowedResourceGuard<u32>) -> Result<u32, ()> {
+        // Return a stream handle for reading the body.
+        // We use the VirtualFs stream system for this.
+        let body_h = *self_;
+        let store = http_store().lock().unwrap();
+        let data = store.outgoing_bodies.get(&body_h).cloned().unwrap_or_default();
+        drop(store);
+        // Create a read stream in the virtual FS
+        let mut fs = self.fs.lock().unwrap();
+        let stream_id = fs.create_http_read_stream(&data);
+        Ok(stream_id)
+    }
+    fn finish(&mut self, _this: u32) -> u32 {
+        // Return a future-trailers handle (stub — no trailers)
+        let mut store = http_store().lock().unwrap();
+        store.alloc()
+    }
+}
+
+// -- FutureTrailers --
+
+impl http_types::FutureTrailers<u32, u32> for HostState {
+    type T = u32;
+    fn subscribe(&mut self, _self_: BorrowedResourceGuard<u32>) -> u32 {
+        0 // pollable that's always ready
+    }
+    fn get(
+        &mut self,
+        _self_: BorrowedResourceGuard<u32>,
+    ) -> Option<Result<Result<Option<u32>, http_types::ErrorCode>, ()>> {
+        Some(Ok(Ok(None))) // no trailers
+    }
+}
+
+// -- OutgoingResponse (stub — not needed for outgoing requests) --
+
+impl http_types::OutgoingResponse<u32, u32> for HostState {
+    type T = u32;
+    fn new(&mut self, _headers: u32) -> u32 { 0 }
+    fn status_code(&mut self, _self_: BorrowedResourceGuard<u32>) -> u16 { 200 }
+    fn set_status_code(&mut self, _self_: BorrowedResourceGuard<u32>, _status_code: u16) -> Result<(), ()> { Ok(()) }
+    fn headers(&mut self, _self_: BorrowedResourceGuard<u32>) -> u32 { 0 }
+    fn body(&mut self, _self_: BorrowedResourceGuard<u32>) -> Result<u32, ()> { Err(()) }
+}
+
+// -- OutgoingBody --
+
+impl http_types::OutgoingBody<u32, u32> for HostState {
+    type T = u32;
+    fn write(&mut self, self_: BorrowedResourceGuard<u32>) -> Result<u32, ()> {
+        // Return a writable stream handle
+        let body_h = *self_;
+        let mut fs = self.fs.lock().unwrap();
+        let stream_id = fs.create_http_write_stream(body_h);
+        Ok(stream_id)
+    }
+    fn finish(&mut self, _this: u32, _trailers: Option<u32>) -> Result<(), http_types::ErrorCode> {
+        Ok(())
+    }
+}
+
+// -- FutureIncomingResponse --
+
+impl http_types::FutureIncomingResponse<u32, u32> for HostState {
+    type T = u32;
+    fn subscribe(&mut self, _self_: BorrowedResourceGuard<u32>) -> u32 {
+        0 // pollable that's always ready (we do sync HTTP)
+    }
+    fn get(
+        &mut self,
+        self_: BorrowedResourceGuard<u32>,
+    ) -> Option<Result<Result<u32, http_types::ErrorCode>, ()>> {
+        let store = http_store().lock().unwrap();
+        let future = store.future_responses.get(&*self_)?;
+        match future {
+            Some(Ok(resp_h)) => Some(Ok(Ok(*resp_h))),
+            Some(Err(msg)) => Some(Ok(Err(http_types::ErrorCode::InternalError(Some(msg.clone()))))),
+            None => None,
+        }
+    }
+}
+
+// -- HTTP Types namespace --
+
+impl wasi::http::Types<u32, u32, u32, u32> for HostState {
+    fn http_error_code(
+        &mut self,
+        _err: BorrowedResourceGuard<u32>,
+    ) -> Option<http_types::ErrorCode> {
+        Some(http_types::ErrorCode::InternalError(Some("error".to_string())))
+    }
+}
+
+// -- OutgoingHandler — the actual HTTP implementation with domain filtering --
+
+impl wasi::http::OutgoingHandler<http_types::ErrorCode, u32, u32, u32> for HostState {
+    fn handle(
+        &mut self,
+        request: u32,
+        _options: Option<u32>,
+    ) -> Result<u32, http_types::ErrorCode> {
+        let mut store = http_store().lock().unwrap();
+
+        let req = store.requests.remove(&request)
+            .ok_or(http_types::ErrorCode::InternalError(Some("unknown request handle".into())))?;
+
+        let scheme_str = &req.scheme;
+        let authority_str = req.authority.as_deref().unwrap_or("");
+        let path = req.path_with_query.as_deref().unwrap_or("/");
+        let path = if path.starts_with('/') { path.to_string() } else { format!("/{}", path) };
+        let url = format!("{}://{}{}", scheme_str, authority_str, path);
+
+        // Domain allowlist check
+        let domain = authority_str.split(':').next().unwrap_or("");
+        {
+            let allowed = self.allowed_domains.lock().unwrap();
+            if !allowed.contains(domain) {
+                return Err(http_types::ErrorCode::HTTPRequestDenied);
+            }
+        }
+
+        let reqwest_method = match req.method.as_str() {
+            "GET" => reqwest::Method::GET,
+            "POST" => reqwest::Method::POST,
+            "PUT" => reqwest::Method::PUT,
+            "DELETE" => reqwest::Method::DELETE,
+            "HEAD" => reqwest::Method::HEAD,
+            "OPTIONS" => reqwest::Method::OPTIONS,
+            "PATCH" => reqwest::Method::PATCH,
+            "CONNECT" => reqwest::Method::CONNECT,
+            "TRACE" => reqwest::Method::TRACE,
+            m => reqwest::Method::from_bytes(m.as_bytes())
+                .map_err(|_| http_types::ErrorCode::HTTPRequestMethodInvalid)?,
+        };
+
+        let headers = store.fields.get(&req.headers_handle).cloned().unwrap_or_default();
+        let body_bytes = req.body_handle.and_then(|bh| store.outgoing_bodies.get(&bh).cloned()).unwrap_or_default();
+
+        // Allocate a future response handle
+        let future_h = store.alloc();
+        store.future_responses.insert(future_h, None);
+        drop(store);
+
+        // Perform the HTTP request synchronously
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| http_types::ErrorCode::InternalError(Some(e.to_string())))?;
+
+        let mut builder = client.request(reqwest_method, &url);
+        for (k, v) in &headers {
+            builder = builder.header(k, v.as_slice());
+        }
+        if !body_bytes.is_empty() {
+            builder = builder.body(body_bytes);
+        }
+
+        let result = builder.send();
+
+        let mut store = http_store().lock().unwrap();
+        match result {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+
+                let resp_headers_h = store.alloc();
+                let mut resp_headers = Vec::new();
+                for (name, value) in resp.headers() {
+                    resp_headers.push((name.to_string(), value.as_bytes().to_vec()));
+                }
+                store.fields.insert(resp_headers_h, resp_headers);
+
+                let body_bytes = resp.bytes()
+                    .map(|b| b.to_vec())
+                    .unwrap_or_default();
+
+                let resp_h = store.alloc();
+                store.responses.insert(resp_h, (status, resp_headers_h, body_bytes));
+                store.future_responses.insert(future_h, Some(Ok(resp_h)));
+            }
+            Err(e) => {
+                store.future_responses.insert(future_h, Some(Err(e.to_string())));
+            }
+        }
+
+        Ok(future_h)
+    }
+}

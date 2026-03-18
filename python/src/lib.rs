@@ -32,6 +32,7 @@ pub struct WasmSandbox {
     inner: Option<PythonSandbox>,
     tools: HashMap<String, Py<PyAny>>,
     pending_files: Vec<(String, Vec<u8>)>,
+    pending_networks: Vec<String>,
     module_path: String,
     heap_size: u64,
     stack_size: u64,
@@ -52,6 +53,7 @@ impl WasmSandbox {
             inner: None,
             tools: HashMap::new(),
             pending_files: Vec::new(),
+            pending_networks: Vec::new(),
             module_path: module_path.to_string(),
             heap_size: parse_size(heap_size)?,
             stack_size: parse_size(stack_size)?,
@@ -112,6 +114,15 @@ impl WasmSandbox {
             exit_code: result.exit_code,
             outputs: outputs.unbind(),
         })
+    }
+
+    fn add_network(&mut self, domain: &str) -> PyResult<()> {
+        if let Some(sandbox) = self.inner.as_mut() {
+            sandbox.add_network(domain);
+        } else {
+            self.pending_networks.push(domain.to_string());
+        }
+        Ok(())
     }
 
     fn add_file(&mut self, name: &str, data: &[u8]) -> PyResult<()> {
@@ -191,6 +202,11 @@ impl WasmSandbox {
         let pending = std::mem::take(&mut self.pending_files);
         for (name, data) in pending {
             sandbox.add_file(&name, data);
+        }
+        // Apply any networks queued before sandbox init
+        let pending_networks = std::mem::take(&mut self.pending_networks);
+        for domain in pending_networks {
+            sandbox.add_network(&domain);
         }
         self.inner = Some(sandbox);
         Ok(())

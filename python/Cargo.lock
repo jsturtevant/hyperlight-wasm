@@ -1070,7 +1070,6 @@ dependencies = [
 [[package]]
 name = "hyperlight-component-util"
 version = "0.13.0"
-source = "git+https://github.com/hyperlight-dev/hyperlight?rev=c9a1a4cefce6a085af92e375121e9f1b1c8deeec#c9a1a4cefce6a085af92e375121e9f1b1c8deeec"
 dependencies = [
  "itertools",
  "prettyplease",
@@ -1185,6 +1184,7 @@ dependencies = [
  "hyperlight-component-macro",
  "hyperlight-host",
  "hyperlight-wasm",
+ "reqwest",
  "serde",
  "serde_json",
 ]

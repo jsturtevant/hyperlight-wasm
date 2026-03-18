@@ -22,9 +22,8 @@ sandbox.register_tool("lookup", lambda key="": {"api_key": "sk-demo", "model": "
 sandbox.add_file("data.json", b'{"users": [{"name": "Alice"}, {"name": "Bob"}]}')
 sandbox.add_file("config.yaml", b"model: gpt-4\ntimeout: 30\n")
 
-# ── [PLANNED Phase 3.5] Allow network access ───────────────────────
-# sandbox.add_network("api.bing.com")
-# sandbox.add_network("api.github.com")
+# ── [WORKING] Allow network access ───────────────────────
+sandbox.add_network("httpbin.org")
 
 # ═══════════════════════════════════════════════════════════════════
 # Test 1: Basic code execution  [WORKING]
@@ -147,7 +146,7 @@ print(f"Host read back: {report}")
 assert report["user_count"] == 2
 
 # ═══════════════════════════════════════════════════════════════════
-# Test 6: Network access — blocked by default  [PLANNED Phase 3.5]
+# Test 6: Network access — blocked by default  [WORKING]
 # ═══════════════════════════════════════════════════════════════════
 print()
 print("═" * 60)
@@ -155,16 +154,35 @@ print("Test 6: Network access denied without permissions")
 print("═" * 60)
 result = sandbox.run("""
 try:
-    import urllib.request
-    resp = urllib.request.urlopen("https://api.bing.com/search?q=hello")
-    print(resp.read().decode()[:200])
-except (OSError, ImportError) as e:
-    print(f"Network blocked: {type(e).__name__}")
-    print("  Fix: sandbox.add_network('api.bing.com')  [Phase 3.5]")
+    resp = http_get("https://example.com")
+    print(f"Got response: {resp['status']}")
+except Exception as e:
+    print(f"Network blocked: {type(e).__name__}: {e}")
+    print("  (example.com is not in the allowlist — correct!)")
 """)
 print(result.stdout)
 if not result.success:
     print("(Network access correctly denied — sandbox terminated)")
+
+# ═══════════════════════════════════════════════════════════════════
+# Test 7: Network access — allowed domain  [WORKING]
+# ═══════════════════════════════════════════════════════════════════
+print()
+print("═" * 60)
+print("Test 7: Network access to allowed domain (WASI-HTTP)")
+print("═" * 60)
+result = sandbox.run("""
+resp = http_get("https://httpbin.org/get")
+print(f"HTTP status: {resp['status']}")
+print(f"Response body (first 200 chars):")
+print(resp['body'][:200])
+""")
+print(result.stdout)
+if result.success:
+    print("✅ Network access to allowed domain works via WASI-HTTP!")
+else:
+    print(f"⚠️ Network access failed")
+    print(f"stderr: {result.stderr[:300]}")
 
 print("═" * 60)
 print("✅ All tests passed!")
