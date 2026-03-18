@@ -103,12 +103,16 @@ def _http_request(method: str, url: str, body: str = "", content_type: str = "")
     if resp_result is None:
         raise OSError("HTTP request returned no response")
 
-    # Unwrap Result layers
+    # Unwrap Result layers: Ok(Ok(response)) / Ok(Err(ErrorCode)) / None
     resp = resp_result
     if hasattr(resp, 'value'):
         resp = resp.value
     if hasattr(resp, 'value'):
         resp = resp.value
+
+    # Check if we got an ErrorCode instead of a response
+    if not hasattr(resp, 'status'):
+        raise OSError(f"HTTP request failed: {resp}")
 
     status = resp.status()
     resp_headers = resp.headers()
