@@ -44,6 +44,11 @@ WRONG — do NOT pass a dict:
 WRONG — do NOT hardcode data that should come from call_tool:
   users = [{"name": "Alice"}]  # NEVER do this
 
+The sandbox also has file I/O capabilities:
+  - Files pre-loaded by the host are available at /input/<filename>
+  - Code can write results to /output/<filename>
+  - Attempting to read a file that doesn't exist raises FileNotFoundError
+
 Do NOT call compute or fetch_data as tools directly. Use execute_code.
 Solve each request in a single execute_code call when possible.
 Always include the complete stdout from execute_code in your response to the user."""
@@ -112,6 +117,7 @@ def _init_sandbox() -> None:
     _sandbox = WasmSandbox(module_path=str(module_path))
     _sandbox.register_tool("compute", lambda **kw: compute(**kw))
     _sandbox.register_tool("fetch_data", lambda **kw: fetch_data(**kw))
+    _sandbox.add_file("team.json", b'{"members": [{"name": "Alice", "role": "eng"}, {"name": "Bob", "role": "pm"}]}')
 
     # Warm up the sandbox (first run triggers init) and snapshot clean state
     _sandbox.run('None')
@@ -172,7 +178,7 @@ async def main() -> None:
         if "--interactive" not in sys.argv:
             prompts = [
                 "Fetch all users, find admins, multiply 6*7, and print the users, admins, and multiplication result. Use one execute_code call.",
-                "Use execute_code to generate a small emoji mandelbrot set 40x40 and show the output verbatum",
+                "Use execute_code to try reading /input/secrets.txt (it doesn't exist — handle the error), then read /input/team.json which does exist, parse it, and print each team member's name and role.",
             ]
             for i, prompt in enumerate(prompts):
                 if i > 0:
