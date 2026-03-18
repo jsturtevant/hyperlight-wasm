@@ -23,7 +23,7 @@ sandbox.register_tool("greet", lambda name="world": f"Hello, {name}!")
 
 # Async functions work too — no wrapping needed
 async def async_multiply(a=0, b=0):
-    await asyncio.sleep(0)  # simulate async I/O
+    await asyncio.sleep(0.5)  # simulate async I/O
     return a * b
 
 sandbox.register_tool("multiply", async_multiply)
@@ -37,12 +37,15 @@ print(f"success: {result.success}")
 # Test 2: Tool dispatch via call_tool() — sync and async
 print("\n--- Test 2: Tool dispatch (sync + async) ---")
 result = timed_run(sandbox, """
+import time
 result = call_tool('add', a=3, b=4)
 greeting = call_tool('greet', name='James')
+t0 = time.time()
 product = call_tool('multiply', a=6, b=7)
+elapsed = time.time() - t0
 print(f"3 + 4 = {result}")
 print(f"{greeting}")
-print(f"6 * 7 = {product}  (async tool)")
+print(f"6 * 7 = {product}  (async tool, slept {elapsed:.1f}s)")
 try:
     call_tool('nonexistent', x=1)
 except RuntimeError as e:
