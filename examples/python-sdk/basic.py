@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from pathlib import Path
 from hyperlight_sandbox import WasmSandbox
 
 def timed_run(sandbox, code, label="run"):
@@ -27,6 +28,29 @@ async def async_multiply(a=0, b=0):
     return a * b
 
 sandbox.register_tool("multiply", async_multiply)
+
+# Host tool using python-pptx (C extension — can't run in Wasm guest)
+def make_pptx(title="", subtitle="", slides=None):
+    """Build a PPTX on the host side using python-pptx."""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+
+    prs = Presentation()
+    # Title slide
+    title_slide = prs.slides.add_slide(prs.slide_layouts[0])
+    title_slide.shapes.title.text = title
+    title_slide.placeholders[1].text = subtitle
+
+    # Content slides
+    for slide_data in (slides or []):
+        slide = prs.slides.add_slide(prs.slide_layouts[1])
+        slide.shapes.title.text = slide_data.get("title", "")
+        slide.placeholders[1].text = slide_data.get("body", "")
+
+    prs.save("demo.pptx")
+    return f"{len(slides or [])} slides saved to demo.pptx"
+
+sandbox.register_tool("make_pptx", make_pptx)
 
 # Test 1: Basic code execution (first run triggers sandbox init)
 print("\n--- Test 1: Basic execution (includes sandbox init) ---")
@@ -99,5 +123,34 @@ print(f"stdout: {result.stdout!r}")
 print(f"outputs: {dict((k, v.decode()) for k, v in result.outputs.items())}")
 assert result.success
 assert result.outputs["result.txt"] == b"Written from Python SDK!"
+
+# Test 6: Generate a PowerPoint file via host tool
+# python-pptx requires lxml (C extension) which can't run in Wasm,
+# so the guest prepares slide data and the host builds the PPTX.
+print("\n--- Test 6: PowerPoint generation (guest data → host pptx) ---")
+result = timed_run(sandbox, """
+import json
+
+slides = [
+    {"title": "Hyperlight Sandbox", "body": "Code runs in hardware-isolated Wasm components"},
+    {"title": "Key Features", "body": "Tool dispatch, File I/O, Snapshots, WASI-HTTP networking"},
+    {"title": "Guest + Host", "body": "Guest computes data, host builds the PPTX with python-pptx"},
+]
+result = call_tool('make_pptx', title='Hyperlight Demo', subtitle='Generated from a Wasm sandbox', slides=slides)
+print(f"PPTX created: {result}")
+""", "pptx via host tool")
+print(f"stdout: {result.stdout!r}")
+assert result.success
+pptx_path = Path("demo.pptx")
+assert pptx_path.exists(), "demo.pptx not written"
+size = pptx_path.stat().st_size
+print(f"Host wrote: demo.pptx ({size:,} bytes)")
+# Verify it's a valid PPTX
+import zipfile
+with zipfile.ZipFile(pptx_path) as zf:
+    slide_files = [n for n in zf.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
+    print(f"PPTX contains: {len(slide_files)} slides — {slide_files}")
+assert len(slide_files) == 4  # title + 3 content slides
+pptx_path.unlink()
 
 print("\n✅ All tests passed!")
