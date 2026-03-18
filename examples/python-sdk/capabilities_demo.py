@@ -3,10 +3,10 @@ Hyperlight Sandbox — Full Capabilities Demo
 
 Shows the complete API surface for hyperlight_sandbox.
 Features marked [WORKING] run today. Features marked [PLANNED] show the
-Phase 3 / Phase 3.5 API that will work once WASI filesystem and WASI-HTTP
-host functions are implemented.
+Phase 3.5 API that will work once WASI-HTTP host functions are implemented.
 """
 
+import json
 from hyperlight_sandbox import WasmSandbox
 
 sandbox = WasmSandbox(module_path="src/python_sandbox/python-sandbox.aot")
@@ -18,9 +18,9 @@ sandbox.register_tool("multiply", lambda a=0, b=0: a * b)
 sandbox.register_tool("greet", lambda name="world": f"Hello, {name}!")
 sandbox.register_tool("lookup", lambda key="": {"api_key": "sk-demo", "model": "gpt-4"}.get(key, "not found"))
 
-# ── [PLANNED Phase 3] Pre-load files ────────────────────────────────
-# sandbox.add_files("data.json", "config.yaml")   # from local filesystem
-# sandbox.add_file("data.json", b'{"key": "value"}')  # from bytes
+# ── [WORKING] Pre-load files ───────────────────────────────────────
+sandbox.add_file("data.json", b'{"users": [{"name": "Alice"}, {"name": "Bob"}]}')
+sandbox.add_file("config.yaml", b"model: gpt-4\ntimeout: 30\n")
 
 # ── [PLANNED Phase 3.5] Allow network access ───────────────────────
 # sandbox.add_network("api.bing.com")
@@ -111,44 +111,55 @@ print(result.stdout.strip())
 assert result.success
 
 # ═══════════════════════════════════════════════════════════════════
-# Test 5: File + network access — blocked by default
+# Test 5: File I/O — read from /input/, write to /output/  [WORKING]
 # ═══════════════════════════════════════════════════════════════════
 print()
 print("═" * 60)
-print("Test 5: File + network access denied without permissions")
+print("Test 5: File I/O via WASI filesystem")
 print("═" * 60)
 result = sandbox.run("""
 import json
 
-# --- File access without sandbox.add_files() ---
-try:
-    data = json.load(open("/input/data.json"))
-    print(f"Read data: {data}")
-except (FileNotFoundError, OSError) as e:
-    print(f"FileNotFoundError: /input/data.json — no files loaded")
-    print(f"  Fix: sandbox.add_files('data.json')")
+# Read pre-loaded files from /input/
+with open('/input/data.json', 'r') as f:
+    data = json.load(f)
+print(f"Users: {[u['name'] for u in data['users']]}")
 
-# --- Network access without sandbox.add_network() ---
+with open('/input/config.yaml', 'r') as f:
+    config = f.read()
+print(f"Config: {config.strip()}")
+
+# Write results to /output/
+with open('/output/report.json', 'w') as f:
+    json.dump({"user_count": len(data['users']), "status": "ok"}, f)
+print("Wrote report.json to /output/")
+""")
+print(result.stdout)
+assert result.success
+report = json.loads(result.outputs["report.json"])
+print(f"Host read back: {report}")
+assert report["user_count"] == 2
+
+# ═══════════════════════════════════════════════════════════════════
+# Test 6: Network access — blocked by default  [PLANNED Phase 3.5]
+# ═══════════════════════════════════════════════════════════════════
+print()
+print("═" * 60)
+print("Test 6: Network access denied without permissions")
+print("═" * 60)
+result = sandbox.run("""
 try:
     import urllib.request
     resp = urllib.request.urlopen("https://api.bing.com/search?q=hello")
     print(resp.read().decode()[:200])
 except (OSError, ImportError) as e:
-    print(f"OSError: network not available in sandbox")
-    print(f"  Fix: sandbox.add_network('api.bing.com')")
-
-print()
-print("Both file and network access fail cleanly without permissions.")
-print("No data leaves the sandbox unless explicitly allowed.")
+    print(f"Network blocked: {type(e).__name__}")
+    print("  Fix: sandbox.add_network('api.bing.com')  [Phase 3.5]")
 """)
 print(result.stdout)
-# Note: this test may fail with exit_code=1 if WASI stubs trap.
-# That's a known limitation — Phase 3/3.5 will fix it.
 if not result.success:
-    print("File/network access correctly denied (sandbox terminated).")
-    print("  sandbox.add_files('data.json')       → Phase 3 (WASI filesystem)")
-    print("  sandbox.add_network('api.bing.com')   → Phase 3.5 (WASI-HTTP)")
+    print("(Network access correctly denied — sandbox terminated)")
 
 print("═" * 60)
-print("✅ All working tests passed! (Phase 3 & 3.5 planned)")
+print("✅ All tests passed!")
 print("═" * 60)

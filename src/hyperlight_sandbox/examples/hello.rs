@@ -82,7 +82,9 @@ print("File I/O test passed!")
         Ok(result) => {
             println!("stdout: {:?}", result.stdout);
             println!("exit_code: {}", result.exit_code);
-            println!("outputs: {:?}", result.outputs);
+            for (name, data) in &result.outputs {
+                println!("output[{name}]: {:?}", String::from_utf8_lossy(data));
+            }
         }
         Err(e) => eprintln!("Failed: {e}"),
     }
