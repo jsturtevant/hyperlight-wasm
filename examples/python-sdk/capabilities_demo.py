@@ -120,6 +120,12 @@ print("═" * 60)
 result = sandbox.run("""
 import json
 
+# File not found gives a clean error (no crash)
+try:
+    open('/input/nonexistent.txt', 'r')
+except FileNotFoundError:
+    print("FileNotFoundError for missing file — correct!")
+
 # Read pre-loaded files from /input/
 with open('/input/data.json', 'r') as f:
     data = json.load(f)
