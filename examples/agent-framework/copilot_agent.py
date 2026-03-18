@@ -49,6 +49,12 @@ The sandbox also has file I/O capabilities:
   - Code can write results to /output/<filename>
   - Attempting to read a file that doesn't exist raises FileNotFoundError
 
+The sandbox has WASI-HTTP networking with an allowlist:
+  - `http_get(url)` and `http_post(url, body)` are built-in globals — no import needed
+  - They return {"status": int, "body": str}
+  - The host controls which domains/paths/methods are allowed
+  - Requests to non-allowed destinations raise an error (ErrorCode_HttpRequestDenied)
+
 Do NOT call compute or fetch_data as tools directly. Use execute_code.
 Solve each request in a single execute_code call when possible.
 Always include the complete stdout from execute_code in your response to the user."""
@@ -119,6 +125,10 @@ def _init_sandbox() -> None:
     _sandbox.register_tool("fetch_data", lambda **kw: fetch_data(**kw))
     _sandbox.add_file("team.json", b'{"members": [{"name": "Alice", "role": "eng"}, {"name": "Bob", "role": "pm"}]}')
 
+    # Network allowlist: only httpbin.org GET, and jsonplaceholder for any method
+    _sandbox.allow("https://httpbin.org", methods=["GET"])
+    _sandbox.allow("jsonplaceholder.typicode.com")
+
     # Warm up the sandbox (first run triggers init) and snapshot clean state
     _sandbox.run('None')
     _snapshot = _sandbox.snapshot()
@@ -179,6 +189,14 @@ async def main() -> None:
             prompts = [
                 "Fetch all users, find admins, multiply 6*7, and print the users, admins, and multiplication result. Use one execute_code call.",
                 "Use execute_code to try reading /input/secrets.txt (it doesn't exist — handle the error), then read /input/team.json which does exist, parse it, and print each team member's name and role.",
+                (
+                    "Use execute_code to demonstrate the network allowlist. In a single code block:\n"
+                    "1. Use http_get to fetch https://httpbin.org/get — this should succeed (GET is allowed)\n"
+                    "2. Try http_post to https://httpbin.org/post — this should FAIL (only GET is allowed for httpbin.org)\n"
+                    "3. Try http_get to https://example.com — this should FAIL (example.com is not in the allowlist)\n"
+                    "4. Use http_get to fetch https://jsonplaceholder.typicode.com/todos/1 — this should succeed (all methods allowed)\n"
+                    "Wrap each call in try/except and print whether it succeeded or was blocked."
+                ),
             ]
             for i, prompt in enumerate(prompts):
                 if i > 0:
