@@ -1,6 +1,6 @@
 # PRD: `hyperlight_sandbox` — Python SDK for Wasm-Isolated Code Execution
 
-**Status:** Phase 2.5 Complete
+**Status:** Phase 3 Complete
 **Author:** Dutch (Lead Architect)
 **Requested by:** James Sturtevant
 **Date:** 2026-03-16
@@ -860,34 +860,52 @@ stderr: ""
 
 **Exit criteria met:** Both examples run end-to-end — model calls `execute_code`, guest code calls `call_tool('compute', ...)` and `call_tool('fetch_data', ...)`, results flow back. ✔
 
-### Phase 3: File I/O + Snapshots ← NEXT
+### Phase 3: File I/O + Snapshots ✔ COMPLETE
 
 **Goal:** WASI filesystem I/O, persistent file loading, and snapshot/restore.
 
-| Task | Layer | Details |
-|------|-------|---------|
-| WASI filesystem preopens for `/input/`, `/output/` | Rust | Pre-populate /input/ from `inputs` dict, read /output/ after execution |
-| `add_files()` / `add_file()` on sandbox | Rust + Bindings | Pre-load files that persist across runs. `add_files("a.json", "b.csv")` (varargs) reads from local FS; `add_file("name", bytes)` adds from memory |
-| `inputs`/`outputs` params on `run()` | Bindings + SDK | Per-run overrides: `run(code, inputs={"data.json": b"..."}, outputs=["result.json"])` |
-| Expose `snapshot()`/`restore()` | Bindings | ✔ Done in Phase 2 — delegate to `LoadedWasmSandbox::snapshot()`/`restore()` |
-| `SandboxEnvironment` dataclass | Python SDK | ✔ Done in Phase 2 — `python/hyperlight_sandbox/__init__.py` |
-| Integration tests for file I/O and snapshots | Test | Round-trip file data, verify snapshot rollback, verify persistent files |
+**Result:** Working end-to-end. Guest Python reads `/input/` files, writes `/output/` files, host retrieves outputs.
 
-**Exit criteria:** File I/O round-trips correctly. `add_files()` persists across runs. `snapshot()` → `run()` → `restore()` → `run()` produces independent results.
+**Implementation learnings:**
+- Required fixing upstream `flags` type support in `hyperlight-component-util` (vendored locally with patch). The `wasm_guest_bindgen!` macro needed `wasmtime::component::flags!` macro generation + `#[component(name)]` annotations for kebab-case matching.
+- WIT must be hand-authored (not extracted from componentize-py output, which includes internal `%constructor`/`%static` types that crash `host_bindgen!`).
+- All 27 WASI interfaces implemented as host functions (real for filesystem, stubs for sockets/terminals).
+- In-memory `VirtualFs` (no temp dirs on disk) — simpler and no cleanup needed.
+- File I/O adds ~9ms to run() time.
 
-### Phase 3.5: WASI-HTTP Networking
+| Task | Status | Details |
+|------|--------|---------|
+| WASI filesystem preopens for `/input/`, `/output/` | ✔ | In-memory VirtualFs with fd 3=/input, fd 4=/output |
+| `add_files()` / `add_file()` on sandbox | ✔ | Rust + PyO3: pre-load files before or after init |
+| `result.outputs` from `/output/` | ✔ | HashMap<String, Vec<u8>> auto-populated after run() |
+| Expose `snapshot()`/`restore()` | ✔ | Done in Phase 2 |
+| Fix `flags` type support in hyperlight-component-util | ✔ | Vendored crate with `flags!` macro + marshal/unmarshal patches |
+| Integration tests | ✔ | basic.py Test 5, capabilities_demo.py Test 5, hello.rs Test 4 |
+
+**Exit criteria met:** File I/O round-trips correctly. `add_file()` persists across runs. Guest reads JSON from `/input/`, writes results to `/output/`, host reads back. ✔
+
+### Phase 3.5: WASI-HTTP Networking ← NEXT
 
 **Goal:** Allow guest code to make outbound HTTP requests to explicitly allowlisted domains.
 
+**Implementation approach (discovered during Phase 3):**
+- componentize-py CPython does NOT include `socket`, `ssl`, `http`, or `urllib` modules. Standard Python networking is impossible.
+- WASI-HTTP (`wasi:http/outgoing-handler`) is the correct path. Guest code uses WIT-generated Python bindings (`wit_world.imports.types.OutgoingRequest`).
+- componentize-py's [http example](https://github.com/bytecodealliance/componentize-py/tree/main/examples/http) shows the pattern.
+- A guest-side `hyperlight.http` helper module (bundled in the component) will provide a simple API: `http_get(url)`, `http_post(url, body, headers)`.
+- Host-side HTTP type implementations are already copied from the http-example (`src/hyperlight_sandbox/src/types/http_*.rs`).
+
 | Task | Layer | Details |
 |------|-------|---------|
-| Port WASI-HTTP host impl from http-example | Rust | Adapt [hyperlight-wasm-http-example](https://github.com/hyperlight-dev/hyperlight-wasm-http-example)'s `wasi:http/outgoing-handler@0.2.3` + supporting WASI interfaces (io, clocks, streams) |
-| Add domain allowlist filtering | Rust | Wrap outgoing-handler to check `request.authority` against allowed domains |
-| `add_network(domain)` method | Rust + Bindings | Adds domain to allowlist. Rejects all requests to non-listed domains |
-| WASI-HTTP imports in guest WIT | Guest | Bundle full WASI interface chain (like http-example's hyperlight.wit) |
+| Add `wasi:http/types` + `wasi:http/outgoing-handler` to WIT | Guest + Host | Minimal HTTP interfaces for outgoing requests |
+| Wire host-side HTTP trait impls | Rust | Connect existing `types/http_*.rs` to `wasi_impl.rs` trait impls |
+| Domain allowlist filtering | Rust | Check `request.authority` against `allowed_domains` set |
+| `add_network(domain)` method | Rust + PyO3 | Adds domain to allowlist. Rejects all requests to non-listed domains |
+| Guest-side `hyperlight.http` helper | Guest Python | Simple `http_get(url)` / `http_post(url, body, headers)` wrapping WIT bindings |
+| Rebuild guest with HTTP WIT | Guest | componentize-py auto-generates Python bindings for HTTP types |
 | Integration test: allowed + denied requests | Test | Verify allowed domain succeeds, non-allowed domain gets error |
 
-**Exit criteria:** `sandbox.add_network("api.bing.com")` enables HTTP to that domain. Requests to other domains fail with a clear error.
+**Exit criteria:** `sandbox.add_network("api.bing.com")` enables HTTP to that domain. Guest calls `from hyperlight import http_get; http_get("https://api.bing.com/...")`. Requests to other domains fail with a clear error.
 
 ### Phase 4: High-Level API + Capabilities Hook
 
