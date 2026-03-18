@@ -1636,7 +1636,8 @@ impl wasi::http::OutgoingHandler<http_types::ErrorCode, u32, u32, u32> for HostS
                 store.future_responses.insert(future_h, Some(Ok(resp_h)));
             }
             Err(e) => {
-                store.future_responses.insert(future_h, Some(Err(e.to_string())));
+                let msg = format!("{:#}", e);
+                store.future_responses.insert(future_h, Some(Err(msg)));
             }
         }
 
