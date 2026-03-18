@@ -194,7 +194,7 @@ async def main() -> None:
                     "1. Use http_get to fetch https://httpbin.org/get — this should succeed (GET is allowed)\n"
                     "2. Try http_post to https://httpbin.org/post — this should FAIL (only GET is allowed for httpbin.org)\n"
                     "3. Use http_get to fetch https://example.com — this should succeed (example.com allows all methods)\n"
-                    "4. Try http_get to https://evil.com — this should FAIL (evil.com is not in the allowlist at all)\n"
+                    "4. Try http_get to https://github.com — this should FAIL (github.com is not in the allowlist at all)\n"
                     "Wrap each call in try/except and print whether it succeeded or was blocked."
                 ),
             ]
