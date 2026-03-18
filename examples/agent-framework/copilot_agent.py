@@ -82,10 +82,11 @@ def compute(
     return ops.get(operation, 0.0)
 
 
-def fetch_data(
+async def fetch_data(
     table: Annotated[str, Field(description="Name of the simulated table to query.")],
 ) -> list[dict[str, Any]]:
-    """Fetch simulated records from a named table."""
+    """Fetch simulated records from a named table (async — e.g. could query a real DB)."""
+    await asyncio.sleep(0)  # simulate async I/O
     return _SIMULATED_DATA.get(table, [])
 
 
@@ -122,7 +123,7 @@ def _init_sandbox() -> None:
     start = time.perf_counter()
     _sandbox = WasmSandbox(module_path=str(module_path))
     _sandbox.register_tool("compute", lambda **kw: compute(**kw))
-    _sandbox.register_tool("fetch_data", lambda **kw: fetch_data(**kw))
+    _sandbox.register_tool("fetch_data", fetch_data)  # async — awaited automatically
     _sandbox.add_file("team.json", b'{"members": [{"name": "Alice", "role": "eng"}, {"name": "Bob", "role": "pm"}]}')
 
     # Network allowlist: httpbin.org for GET only, example.com for all methods
