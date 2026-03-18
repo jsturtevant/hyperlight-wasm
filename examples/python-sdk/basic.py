@@ -1,5 +1,6 @@
 """Basic example of hyperlight_sandbox Python SDK."""
 
+import asyncio
 import time
 from hyperlight_sandbox import WasmSandbox
 
@@ -20,19 +21,28 @@ print(f"⏱️  WasmSandbox created (lazy): {(time.perf_counter() - t0) * 1000:.
 sandbox.register_tool("add", lambda a=0, b=0: a + b)
 sandbox.register_tool("greet", lambda name="world": f"Hello, {name}!")
 
+# Async functions work too — no wrapping needed
+async def async_multiply(a=0, b=0):
+    await asyncio.sleep(0)  # simulate async I/O
+    return a * b
+
+sandbox.register_tool("multiply", async_multiply)
+
 # Test 1: Basic code execution (first run triggers sandbox init)
 print("\n--- Test 1: Basic execution (includes sandbox init) ---")
 result = timed_run(sandbox, 'print("hello from python SDK!")', "first run (cold)")
 print(f"stdout: {result.stdout!r}")
 print(f"success: {result.success}")
 
-# Test 2: Tool dispatch via call_tool()
-print("\n--- Test 2: Tool dispatch ---")
+# Test 2: Tool dispatch via call_tool() — sync and async
+print("\n--- Test 2: Tool dispatch (sync + async) ---")
 result = timed_run(sandbox, """
 result = call_tool('add', a=3, b=4)
 greeting = call_tool('greet', name='James')
+product = call_tool('multiply', a=6, b=7)
 print(f"3 + 4 = {result}")
 print(f"{greeting}")
+print(f"6 * 7 = {product}  (async tool)")
 try:
     call_tool('nonexistent', x=1)
 except RuntimeError as e:

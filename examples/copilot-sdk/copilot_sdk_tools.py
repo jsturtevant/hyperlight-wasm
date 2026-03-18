@@ -157,8 +157,9 @@ def compute(params: ComputeParams) -> float:
             return 0.0
 
 
-def fetch_data(params: FetchDataParams) -> list[dict[str, Any]]:
-    """Query a simulated database table."""
+async def fetch_data(params: FetchDataParams) -> list[dict[str, Any]]:
+    """Query a simulated database table (async — e.g. could hit a real DB)."""
+    await asyncio.sleep(0)  # simulate async I/O
     return _SIMULATED_DATA.get(params.table, [])
 
 
@@ -189,10 +190,13 @@ def _init_sandbox():
     start = _time.perf_counter()
     _sandbox = WasmSandbox(module_path=module_path)
 
-    # Register raw functions as host callbacks (not SDK Tool objects).
-    # SDK Tools are for the Copilot session; the sandbox needs plain sync callables.
+    # Register tool functions as host callbacks.
+    # Sync and async functions both work — async is awaited automatically.
     _sandbox.register_tool("compute", lambda **kw: compute(ComputeParams(**kw)))
-    _sandbox.register_tool("fetch_data", lambda **kw: fetch_data(FetchDataParams(**kw)))
+
+    async def _fetch_data_cb(**kw):
+        return await fetch_data(FetchDataParams(**kw))
+    _sandbox.register_tool("fetch_data", _fetch_data_cb)
 
     # Warm up the sandbox (first run triggers init) and snapshot clean state
     _sandbox.run('None')
