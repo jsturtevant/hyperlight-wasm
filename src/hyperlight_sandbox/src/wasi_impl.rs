@@ -1568,11 +1568,11 @@ impl wasi::http::OutgoingHandler<http_types::ErrorCode, u32, u32, u32> for HostS
         let path = if path.starts_with('/') { path.to_string() } else { format!("/{}", path) };
         let url = format!("{}://{}{}", scheme_str, authority_str, path);
 
-        // Domain allowlist check
+        // Network permission check (domain + path + method)
         let domain = authority_str.split(':').next().unwrap_or("");
         {
-            let allowed = self.allowed_domains.lock().unwrap();
-            if !allowed.contains(domain) {
+            let network = self.network.lock().unwrap();
+            if !network.is_allowed(domain, &path, &req.method) {
                 return Err(http_types::ErrorCode::HTTPRequestDenied);
             }
         }

@@ -32,7 +32,7 @@ pub struct WasmSandbox {
     inner: Option<PythonSandbox>,
     tools: HashMap<String, Py<PyAny>>,
     pending_files: Vec<(String, Vec<u8>)>,
-    pending_networks: Vec<String>,
+    pending_networks: Vec<(String, Option<Vec<String>>)>,
     module_path: String,
     heap_size: u64,
     stack_size: u64,
@@ -116,13 +116,19 @@ impl WasmSandbox {
         })
     }
 
-    fn add_network(&mut self, domain: &str) -> PyResult<()> {
+    #[pyo3(signature = (target, methods=None))]
+    fn allow(&mut self, target: &str, methods: Option<Vec<String>>) -> PyResult<()> {
         if let Some(sandbox) = self.inner.as_mut() {
-            sandbox.add_network(domain);
+            sandbox.allow(target, methods);
         } else {
-            self.pending_networks.push(domain.to_string());
+            self.pending_networks.push((target.to_string(), methods));
         }
         Ok(())
+    }
+
+    /// Backward-compatible alias for `allow(domain)`.
+    fn add_network(&mut self, domain: &str) -> PyResult<()> {
+        self.allow(domain, None)
     }
 
     fn add_file(&mut self, name: &str, data: &[u8]) -> PyResult<()> {
@@ -205,8 +211,8 @@ impl WasmSandbox {
         }
         // Apply any networks queued before sandbox init
         let pending_networks = std::mem::take(&mut self.pending_networks);
-        for domain in pending_networks {
-            sandbox.add_network(&domain);
+        for (target, methods) in pending_networks {
+            sandbox.allow(&target, methods);
         }
         self.inner = Some(sandbox);
         Ok(())

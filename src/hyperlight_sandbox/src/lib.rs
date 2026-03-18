@@ -112,6 +112,87 @@ impl Default for ToolRegistry {
 }
 
 // ---------------------------------------------------------------------------
+// Network permissions
+// ---------------------------------------------------------------------------
+
+/// A single network permission entry — describes what the sandbox is allowed to reach.
+#[derive(Debug, Clone)]
+pub struct NetworkPermission {
+    /// The allowed domain (e.g. "httpbin.org").
+    pub domain: String,
+    /// Optional path prefix (e.g. "/api/v1"). If `None`, all paths are allowed.
+    pub path_prefix: Option<String>,
+    /// Optional set of allowed HTTP methods. If `None`, all methods are allowed.
+    pub methods: Option<HashSet<String>>,
+}
+
+/// Manages the set of allowed network destinations for a sandbox.
+#[derive(Debug, Clone, Default)]
+pub struct NetworkPermissions {
+    permissions: Vec<NetworkPermission>,
+}
+
+impl NetworkPermissions {
+    pub fn new() -> Self {
+        Self { permissions: Vec::new() }
+    }
+
+    /// Add a permission. `target` can be:
+    /// - A plain domain: `"httpbin.org"`
+    /// - A URL with path prefix: `"https://httpbin.org/get"`
+    ///
+    /// `methods` optionally restricts which HTTP methods are allowed.
+    pub fn allow(&mut self, target: &str, methods: Option<Vec<String>>) {
+        let methods_set = methods.map(|m| m.into_iter().map(|s| s.to_uppercase()).collect());
+
+        // Parse target: strip scheme, split host/path
+        let without_scheme = target
+            .strip_prefix("https://")
+            .or_else(|| target.strip_prefix("http://"))
+            .unwrap_or(target);
+
+        let (domain, path_prefix) = if let Some(slash_pos) = without_scheme.find('/') {
+            let d = &without_scheme[..slash_pos];
+            let p = &without_scheme[slash_pos..];
+            (d.to_string(), Some(p.to_string()))
+        } else {
+            (without_scheme.to_string(), None)
+        };
+
+        self.permissions.push(NetworkPermission {
+            domain,
+            path_prefix,
+            methods: methods_set,
+        });
+    }
+
+    /// Check if a request to the given domain + path + method is allowed.
+    pub fn is_allowed(&self, domain: &str, path: &str, method: &str) -> bool {
+        self.permissions.iter().any(|p| {
+            if p.domain != domain {
+                return false;
+            }
+            if let Some(ref prefix) = p.path_prefix {
+                if !path.starts_with(prefix.as_str()) {
+                    return false;
+                }
+            }
+            if let Some(ref methods) = p.methods {
+                if !methods.contains(&method.to_uppercase()) {
+                    return false;
+                }
+            }
+            true
+        })
+    }
+
+    /// Check if a domain has any permission at all (for backward compat).
+    pub fn is_domain_allowed(&self, domain: &str) -> bool {
+        self.permissions.iter().any(|p| p.domain == domain)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // WIT host interface — manual registration for tool dispatch
 // ---------------------------------------------------------------------------
 
@@ -124,7 +205,7 @@ impl Default for ToolRegistry {
 pub struct HostState {
     tools: ToolRegistry,
     fs: Arc<Mutex<virtual_fs::VirtualFs>>,
-    allowed_domains: Arc<Mutex<HashSet<String>>>,
+    network: Arc<Mutex<NetworkPermissions>>,
 }
 
 #[allow(refining_impl_trait)]
@@ -243,7 +324,7 @@ impl bindings::hyperlight::sandbox::Tools for HostState {
 pub struct PythonSandbox {
     sandbox: bindings::RootSandbox<HostState, LoadedWasmSandbox>,
     fs: Arc<Mutex<virtual_fs::VirtualFs>>,
-    allowed_domains: Arc<Mutex<HashSet<String>>>,
+    network: Arc<Mutex<NetworkPermissions>>,
 }
 
 impl PythonSandbox {
@@ -256,8 +337,8 @@ impl PythonSandbox {
     pub fn with_tools(config: SandboxConfig, tools: ToolRegistry) -> Result<Self> {
         let module_path = config.module_path.clone();
         let fs = Arc::new(Mutex::new(virtual_fs::VirtualFs::new()));
-        let allowed_domains = Arc::new(Mutex::new(HashSet::new()));
-        let state = HostState { tools, fs: fs.clone(), allowed_domains: allowed_domains.clone() };
+        let network = Arc::new(Mutex::new(NetworkPermissions::new()));
+        let state = HostState { tools, fs: fs.clone(), network: network.clone() };
 
         let mut proto = SandboxBuilder::new()
             .with_guest_input_buffer_size(70_000_000)
@@ -280,7 +361,7 @@ impl PythonSandbox {
         Ok(Self {
             sandbox: bindings::RootSandbox { sb, rt },
             fs,
-            allowed_domains,
+            network,
         })
     }
 
@@ -389,14 +470,31 @@ impl PythonSandbox {
 
     // ----- Network management -----
 
-    /// Allow outbound HTTP requests to the given domain.
-    /// No network access is allowed by default — every domain must be explicitly added.
+    /// Allow outbound HTTP requests to the given target.
+    ///
+    /// `target` can be a plain domain (`"httpbin.org"`) or a URL with path prefix
+    /// (`"https://api.example.com/v1"`).
+    ///
+    /// `methods` optionally restricts which HTTP methods are allowed (e.g. `["GET", "POST"]`).
+    /// If `None`, all methods are allowed.
+    ///
+    /// No network access is allowed by default — every destination must be explicitly allowed.
+    pub fn allow(&mut self, target: &str, methods: Option<Vec<String>>) {
+        self.network.lock().unwrap().allow(target, methods);
+    }
+
+    /// Allow outbound HTTP requests to the given domain (convenience for `allow(domain, None)`).
     pub fn add_network(&mut self, domain: &str) {
-        self.allowed_domains.lock().unwrap().insert(domain.to_string());
+        self.network.lock().unwrap().allow(domain, None);
+    }
+
+    /// Check whether a request to the given domain/path/method is allowed.
+    pub fn is_allowed(&self, domain: &str, path: &str, method: &str) -> bool {
+        self.network.lock().unwrap().is_allowed(domain, path, method)
     }
 
     /// Check whether a domain is in the allowlist.
     pub fn is_domain_allowed(&self, domain: &str) -> bool {
-        self.allowed_domains.lock().unwrap().contains(domain)
+        self.network.lock().unwrap().is_domain_allowed(domain)
     }
 }

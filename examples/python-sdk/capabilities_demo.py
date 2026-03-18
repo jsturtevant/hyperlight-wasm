@@ -23,7 +23,7 @@ sandbox.add_file("data.json", b'{"users": [{"name": "Alice"}, {"name": "Bob"}]}'
 sandbox.add_file("config.yaml", b"model: gpt-4\ntimeout: 30\n")
 
 # ── [WORKING] Allow network access ───────────────────────
-sandbox.add_network("httpbin.org")
+sandbox.allow("https://httpbin.org")
 
 # ═══════════════════════════════════════════════════════════════════
 # Test 1: Basic code execution  [WORKING]
