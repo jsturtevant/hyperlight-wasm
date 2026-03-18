@@ -191,6 +191,9 @@ impl WasmSandbox {
                         }
                     }
                     let result = cb.call(py, (), Some(&kwargs))?;
+
+                    // If the callback returned a coroutine, await it
+                    let result = resolve_maybe_coroutine(py, result.bind(py))?;
                     py_to_json(result.bind(py))
                 })
                 .map_err(|e: PyErr| anyhow::anyhow!("{e}"))
@@ -272,6 +275,42 @@ def _make_sdk_wrapper(tool):
 
     let make_wrapper = wrapper_module.getattr("_make_sdk_wrapper")?;
     Ok(make_wrapper.call1((tool,))?.unbind())
+}
+
+/// If `obj` is a coroutine, await it and return the result.
+/// Otherwise return it as-is. Handles both "no event loop" and
+/// "already inside an event loop" cases.
+fn resolve_maybe_coroutine<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Py<PyAny>> {
+    let inspect = py.import("inspect")?;
+    let is_coro: bool = inspect.call_method1("isawaitable", (obj,))?.extract()?;
+    if !is_coro {
+        return Ok(obj.clone().unbind());
+    }
+
+    // Try asyncio.run() first (works when there's no running loop)
+    let asyncio = py.import("asyncio")?;
+    match asyncio.call_method1("run", (obj,)) {
+        Ok(result) => return Ok(result.unbind()),
+        Err(_) => {}
+    }
+
+    // We're inside a running event loop — run in a thread to avoid
+    // "cannot call asyncio.run() while another loop is running"
+    let resolver = PyModule::from_code(
+        py,
+        c"
+import asyncio
+import concurrent.futures
+
+def _run_coro(coro):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+",
+        c"_coro_resolver.py",
+        c"_coro_resolver",
+    )?;
+    let result = resolver.call_method1("_run_coro", (obj,))?;
+    Ok(result.unbind())
 }
 
 fn json_to_py(py: Python<'_>, val: &serde_json::Value) -> PyResult<Py<PyAny>> {
