@@ -125,9 +125,9 @@ def _init_sandbox() -> None:
     _sandbox.register_tool("fetch_data", lambda **kw: fetch_data(**kw))
     _sandbox.add_file("team.json", b'{"members": [{"name": "Alice", "role": "eng"}, {"name": "Bob", "role": "pm"}]}')
 
-    # Network allowlist: only httpbin.org GET, and jsonplaceholder for any method
+    # Network allowlist: httpbin.org for GET only, example.com for all methods
     _sandbox.allow("https://httpbin.org", methods=["GET"])
-    _sandbox.allow("jsonplaceholder.typicode.com")
+    _sandbox.allow("example.com")
 
     # Warm up the sandbox (first run triggers init) and snapshot clean state
     _sandbox.run('None')
@@ -193,8 +193,8 @@ async def main() -> None:
                     "Use execute_code to demonstrate the network allowlist. In a single code block:\n"
                     "1. Use http_get to fetch https://httpbin.org/get — this should succeed (GET is allowed)\n"
                     "2. Try http_post to https://httpbin.org/post — this should FAIL (only GET is allowed for httpbin.org)\n"
-                    "3. Try http_get to https://example.com — this should FAIL (example.com is not in the allowlist)\n"
-                    "4. Use http_get to fetch https://jsonplaceholder.typicode.com/todos/1 — this should succeed (all methods allowed)\n"
+                    "3. Use http_get to fetch https://example.com — this should succeed (example.com allows all methods)\n"
+                    "4. Try http_get to https://evil.com — this should FAIL (evil.com is not in the allowlist at all)\n"
                     "Wrap each call in try/except and print whether it succeeded or was blocked."
                 ),
             ]
