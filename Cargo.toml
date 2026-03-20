@@ -21,3 +21,6 @@ hyperlight-guest-bin = { version = "0.13.1", features = [ "printf" ] }
 hyperlight-host = { version = "0.13.1", default-features = false, features = ["executable_heap"] }
 hyperlight-wasm-macro = { version = "0.13.1", path = "src/hyperlight_wasm_macro" }
 hyperlight-wasm-runtime = { version = "0.13.1", path = "src/hyperlight_wasm_runtime" }
+
+[patch.crates-io]
+hyperlight-component-util = { git = "https://github.com/jsturtevant/hyperlight-1", branch = "wasm-component-fixes" }

@@ -1517,8 +1517,7 @@ dependencies = [
 [[package]]
 name = "hyperlight-component-util"
 version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dbaeeecb5097a74d57193aae73701af724295375b681177025e9ce278ed4798"
+source = "git+https://github.com/jsturtevant/hyperlight-1?branch=wasm-component-fixes#5b5c8c4be6e157269bb90be1c6a8eab8e795214a"
 dependencies = [
  "itertools 0.14.0",
  "prettyplease",
@@ -2675,7 +2674,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn",
