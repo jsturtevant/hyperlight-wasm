@@ -4,12 +4,17 @@ using HyperlightSandbox.Guest.Python;
 Console.WriteLine("=== Hyperlight Wasm Python Demo (.NET 10) ===");
 Console.WriteLine();
 
-// ── 1. Basic Python execution ────────────────────────────────────────────────
-Console.WriteLine("--- 1. Basic Python execution ---");
-
+// ── Build the sandbox once and register all tools before the first run ───────
 using var sandbox = new SandboxBuilder()
     .WithPythonModule()
     .Build();
+
+// Tools must be registered before the first Run() call.
+// Property names on the DTO must match the Python kwarg names (case-sensitive).
+sandbox.RegisterTool<MathArgs, double>("add", args => args.a + args.b);
+
+// ── 1. Basic Python execution ────────────────────────────────────────────────
+Console.WriteLine("--- 1. Basic Python execution ---");
 
 var result = sandbox.Run("""
     import math
@@ -25,14 +30,13 @@ Console.WriteLine();
 // ── 2. Tool registration – call a .NET function from Python ──────────────────
 Console.WriteLine("--- 2. Tool registration (.NET → Python) ---");
 
-sandbox.RegisterTool<MathArgs, double>("add", args => args.A + args.B);
-
 result = sandbox.Run("""
     total = call_tool("add", a=10, b=32)
     print(f"10 + 32 = {total}")
     """);
 
 Console.WriteLine(result.Stdout.TrimEnd());
+Console.WriteLine($"Success: {result.Success}");
 Console.WriteLine();
 
 // ── 3. Snapshot / restore ────────────────────────────────────────────────────
@@ -58,4 +62,5 @@ Console.WriteLine();
 Console.WriteLine("=== Demo complete ===");
 
 // ── DTO for typed tool ───────────────────────────────────────────────────────
-record MathArgs(double A, double B);
+// Property names must match the Python kwarg names passed to call_tool().
+record MathArgs(double a, double b);
