@@ -1675,16 +1675,15 @@ dependencies = [
 [[package]]
 name = "hyperlight-component-util"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4066c05c73d5eecdcd7d31e106df789f7f74d6a5cfde5b4df7d54dd66e8ae442"
+source = "git+https://github.com/jsturtevant/hyperlight-1?rev=fc67267e9dd2517c7e9138059d3c47b484202f4a#fc67267e9dd2517c7e9138059d3c47b484202f4a"
 dependencies = [
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "prettyplease",
  "proc-macro2",
  "quote",
  "syn",
  "tracing",
- "wasmparser 0.248.0",
+ "wasmparser 0.252.0",
 ]
 
 [[package]]
@@ -4333,6 +4332,19 @@ name = "wasmparser"
 version = "0.248.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa4439c5eee9df71ee0c6efb37f63b1fcb1fec38f85f5142c54e7ed05d33091a"
+dependencies = [
+ "bitflags 2.13.0",
+ "hashbrown 0.17.0",
+ "indexmap",
+ "semver",
+ "serde",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.252.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3eb099dcadcde5be9eef55e3a337128efd4e44b4c93122487e4d2e4e1c6627c"
 dependencies = [
  "bitflags 2.13.0",
  "hashbrown 0.17.0",
