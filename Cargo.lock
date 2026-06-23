@@ -1675,7 +1675,7 @@ dependencies = [
 [[package]]
 name = "hyperlight-component-util"
 version = "0.15.0"
-source = "git+https://github.com/jsturtevant/hyperlight-1?rev=fc67267e9dd2517c7e9138059d3c47b484202f4a#fc67267e9dd2517c7e9138059d3c47b484202f4a"
+source = "git+https://github.com/jsturtevant/hyperlight-1?rev=2640a824b59d18e633e706e5639c7da30e7ad5fc#2640a824b59d18e633e706e5639c7da30e7ad5fc"
 dependencies = [
  "itertools 0.15.0",
  "prettyplease",

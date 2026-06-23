@@ -23,4 +23,4 @@ hyperlight-wasm-macro = { version = "0.14.0", path = "src/hyperlight_wasm_macro"
 hyperlight-wasm-runtime = { version = "0.14.0", path = "src/hyperlight_wasm_runtime" }
 
 [patch.crates-io]
-hyperlight-component-util = { git = "https://github.com/jsturtevant/hyperlight-1", rev = "fc67267e9dd2517c7e9138059d3c47b484202f4a" }
+hyperlight-component-util = { git = "https://github.com/jsturtevant/hyperlight-1", rev = "2640a824b59d18e633e706e5639c7da30e7ad5fc" }
